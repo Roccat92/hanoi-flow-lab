@@ -125,7 +125,7 @@ describe('vehicle physics', () => {
       }
       // conservation: every created vehicle is waiting, inside or completed
       if (i % 200 === 0) {
-        let waiting = 0; for (const s of sim.sources) waiting += s.queue.length;
+        const waiting = sim.queuedCount();
         expect(waiting + sim.vehicleCount() + sim.completed).toBe(sim.spawned);
       }
     }

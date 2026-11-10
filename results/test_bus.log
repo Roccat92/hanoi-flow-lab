@@ -1,16 +1,17 @@
 
  RUN  v5.1.0 /workspace/hanoi-flow-lab
 
- ❯ tests/engine.test.ts (33 tests | 4 failed) 89108ms
+ ❯ tests/engine.test.ts (36 tests | 5 failed) 112333ms
    ❯ vehicle physics (3)
-     × chaos 0.6: no overlap between laterally overlapping vehicles on a link, no teleport, no vehicle lost 73ms
-     × chaos 1: no overlap between laterally overlapping vehicles on a link, no teleport, no vehicle lost 54ms
+     × chaos 0.6: no overlap between laterally overlapping vehicles on a link, no teleport, no vehicle lost 53ms
+     × chaos 1: no overlap between laterally overlapping vehicles on a link, no teleport, no vehicle lost 48ms
    ❯ realism (6)
-     × ngõ: heavy vehicles never use alleys, motorbikes do, local zones generate trips 3974ms
+     × pedestrians cross on zebras and never share the crosswalk with a vehicle 3308ms
+     × ngõ: heavy vehicles never use alleys, motorbikes do, local zones generate trips 4289ms
    ❯ signal-free and hybrid control modes (7)
-     × no signals: no vehicle overlap, conflicting movements never occupied together, pedestrians safe, gridlock and near-miss measured 4151ms
+     × major: signal safety and no overlap 2599ms
 
-⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
 
  FAIL  tests/engine.test.ts > vehicle physics > chaos 0.6: no overlap between laterally overlapping vehicles on a link, no teleport, no vehicle lost
  FAIL  tests/engine.test.ts > vehicle physics > chaos 1: no overlap between laterally overlapping vehicles on a link, no teleport, no vehicle lost
@@ -30,7 +31,26 @@ AssertionError: expected 40 to be 41 // Object.is equality
     130|       }
     131|     }
 
-⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+ FAIL  tests/engine.test.ts > realism > pedestrians cross on zebras and never share the crosswalk with a vehicle
+AssertionError: expected 2 to be +0 // Object.is equality
+
+- Expected
++ Received
+
+- 0
++ 2
+
+ ❯ tests/engine.test.ts:166:30
+    164|     expect(sim.zebras.length).toBeGreaterThan(50);
+    165|     expect(sim.pedCrossed).toBeGreaterThan(200);
+    166|     expect(sim.pedConflicts).toBe(0);
+       |                              ^
+    167|     expect(sim.safetyViolations).toBe(0);
+    168|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯
 
  FAIL  tests/engine.test.ts > realism > ngõ: heavy vehicles never use alleys, motorbikes do, local zones generate trips
 AssertionError: expected 2 to be +0 // Object.is equality
@@ -49,9 +69,9 @@ AssertionError: expected 2 to be +0 // Object.is equality
     187|     expect(twOnAlley).toBeGreaterThan(50);
     188|     expect(sim.localTrips).toBeGreaterThan(300);
 
-⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯
 
- FAIL  tests/engine.test.ts > signal-free and hybrid control modes > no signals: no vehicle overlap, conflicting movements never occupied together, pedestrians safe, gridlock and near-miss measured
+ FAIL  tests/engine.test.ts > signal-free and hybrid control modes > major: signal safety and no overlap
 AssertionError: expected 3 to be +0 // Object.is equality
 
 - Expected
@@ -60,19 +80,19 @@ AssertionError: expected 3 to be +0 // Object.is equality
 - 0
 + 3
 
- ❯ tests/engine.test.ts:280:30
-    278|     expect(ov).toBe(0);
-    279|     expect(clash).toBe(0);
-    280|     expect(sim.pedConflicts).toBe(0);
+ ❯ tests/engine.test.ts:290:30
+    288|     expect(sim.safetyViolations).toBe(0);
+    289|     expect(overlapsOn(sim)).toBe(0);
+    290|     expect(sim.pedConflicts).toBe(0);
        |                              ^
-    281|     expect(sim.pedCrossed).toBeGreaterThan(50);
-    282|     expect(sim.nearMiss).toBeGreaterThan(0);
+    291|     for (const [id] of sim.sig) expect(['fixed', 'actuated', 'ai']).to…
+    292|   });
 
-⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/5]⎯
 
 
  Test Files  1 failed (1)
-      Tests  4 failed | 29 passed (33)
-   Start at  19:41:40
-   Duration  89.51s (tests 100%)
+      Tests  5 failed | 31 passed (36)
+   Start at  19:43:43
+   Duration  112.59s (tests 100%)
 

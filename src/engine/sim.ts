@@ -485,20 +485,35 @@ export class Simulation {
     for (const d of lines) {
       const path: number[] = [];
       for (const l of d.links) {
-        const L = this.net.links[l]; if (!L || L.closed || !L.carOk) break;
+        const L = this.net.links[l]; if (!L || L.closed || !L.carOk || !L.heavyOk) break; // never into a ngõ
         if (path.length && !this.moveOf.has(path[path.length - 1] * 65536 + l)) break;
         if (path.includes(l)) break;
         path.push(l);
       }
+      if (path.length < 2) continue;
+      // a route clipped inside the area continues (shortest path, heavy-vehicle network) to the nearest exit, so buses never vanish mid-street
+      const last = path[path.length - 1];
+      if (!this.sinks.includes(last)) {
+        let bd = -1, bc = Infinity; for (const d of this.sinks) { const c = this.ffTable(d, 2).cost[last]; if (c < bc) { bc = c; bd = d; } }
+        if (bd < 0) continue;
+        const t = this.ffTable(bd, 2); let cur = last;
+        for (let g = 0; g < 200 && cur !== bd; g++) { const n = t.next[cur]; if (n < 0 || path.includes(n)) break; path.push(n); cur = n; }
+        if (cur !== bd) continue;
+      }
       let len = 0; for (const l of path) len += this.net.links[l].len;
-      if (path.length < 2 || len < 300) continue;
+      if (len < 300) continue;
       const idx = this.lines.length;
       const hw = (peak ? d.headwayMin[0] : d.headwayMin[1]) * 60;
       const ln: Line = { idx, ref: d.ref, name: d.name, colour: d.colour || '#1e88e5', inferred: d.headwayInferred, path, stops: [], headwayS: hw, nextT: this.busRng.range(0, hw), queue: [], lastDep: new Float64Array(0), runs: 0 };
       for (const st of d.stops) {
         const pi = path.indexOf(st.link); if (pi < 0) continue;
         const L = this.net.links[st.link];
-        const sPos = Math.min(L.stopS - 4, Math.max(L.startS + 14, st.s)); if (sPos < L.startS + 14) continue;
+        let sPos = Math.min(L.stopS - 4, Math.max(L.startS + 14, st.s));
+        for (let it = 0; it < 3 && !this.kerbClearOfZebra(st.link, sPos, 12); it++) {
+          const z = (this.zebrasOnLink.get(st.link) ?? []).find(z => { const zs = z.link === st.link ? z.sL : z.sT; return zs > sPos - 16 && zs < sPos + 4; })!;
+          sPos = (z.link === st.link ? z.sL : z.sT) - 4.5; // stop just before the crossing
+        }
+        if (sPos < L.startS + 14 || !this.kerbClearOfZebra(st.link, sPos, 12)) continue;
         const k = st.link + ':' + Math.round(sPos / 20);
         let sp = key.get(k);
         if (!sp) { sp = { id: this.stopPts.length, link: st.link, s: sPos, name: st.name, lines: [], wait: [], nextArr: [], rate: [], boardingUntil: -1 }; key.set(k, sp); this.stopPts.push(sp); }
@@ -560,7 +575,8 @@ export class Simulation {
         return;
       }
       if (L.len > 60 && L.stopS - L.startS > 45 && v.brng!.next() < this.busCfg.hailP) {
-        v.kerbMode = 2; v.kerbS = v.brng!.range(L.startS + 20, L.stopS - 15); v.nA = v.brng!.next() < 0.3 ? 1 : 0;
+        const ks = v.brng!.range(L.startS + 20, L.stopS - 15);
+        if (this.kerbClearOfZebra(link, ks, v.len)) { v.kerbMode = 2; v.kerbS = ks; v.nA = v.brng!.next() < 0.3 ? 1 : 0; }
       }
       return;
     }
@@ -568,11 +584,17 @@ export class Simulation {
       const del = v.kind === 0 && v.unloads === 0 && this.frRng.next() < this.truckCfg.unloadP;
       const gar = v.kind === 3 && v.unloads < 4 && this.frRng.next() < 0.25;
       if (del || gar) {
-        v.kerbMode = 3; v.kerbS = this.frRng.range(L.startS + 18, L.stopS - 20);
+        v.kerbS = this.frRng.range(L.startS + 18, L.stopS - 20); v.kerbMode = this.kerbClearOfZebra(link, v.kerbS, v.len) ? 3 : 0;
         v.kerbDur = del ? this.frRng.range(this.truckCfg.unloadMin[0], this.truckCfg.unloadMin[1]) * 60 : this.frRng.range(20, 60);
       }
     }
   }
+  /** a kerb stop with the front at s must not leave the body (len) on a zebra crossing */
+  private kerbClearOfZebra(link: number, s: number, len: number) {
+    for (const z of this.zebrasOnLink.get(link) ?? []) { const zs = z.link === link ? z.sL : z.sT; if (zs > s - len - 4 && zs < s + 4) return false; }
+    return true;
+  }
+  queuedCount() { let n = this.warm.length; for (const s of this.sources) n += s.queue.length; for (const l of this.lines) n += l.queue.length; return n; }
   kerbLat(L: Link, v: Veh) { return L.width - v.w / 2 - 0.15; }
   private startDwell(v: Veh, L: Link) {
     v.inLane = Math.abs(v.lat - this.kerbLat(L, v)) > 0.8; v.dwellT0 = this.t; v.v = 0;
