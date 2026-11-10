@@ -1,0 +1,47 @@
+{
+ "node": "v24.22.1",
+ "cpu": "Intel(R) Xeon(R) Processor",
+ "dt": 0.5,
+ "results": [
+  {
+   "target": 1000,
+   "reached": 970,
+   "measuredAt": 999,
+   "simTimeToFillS": 270.5,
+   "msPerStep": 0.474,
+   "stepsPerSec": 2110,
+   "realtimeFactor": 1054.8,
+   "fillWallS": 0.2
+  },
+  {
+   "target": 3000,
+   "reached": 2910,
+   "measuredAt": 2999,
+   "simTimeToFillS": 661,
+   "msPerStep": 1.775,
+   "stepsPerSec": 563,
+   "realtimeFactor": 281.6,
+   "fillWallS": 1.4
+  },
+  {
+   "target": 5000,
+   "reached": 4851,
+   "measuredAt": 4999,
+   "simTimeToFillS": 1192,
+   "msPerStep": 3.116,
+   "stepsPerSec": 321,
+   "realtimeFactor": 160.5,
+   "fillWallS": 4.5
+  },
+  {
+   "target": 10000,
+   "reached": 9700,
+   "measuredAt": 9928,
+   "simTimeToFillS": 5074,
+   "msPerStep": 5.989,
+   "stepsPerSec": 167,
+   "realtimeFactor": 83.5,
+   "fillWallS": 41.3
+  }
+ ]
+}

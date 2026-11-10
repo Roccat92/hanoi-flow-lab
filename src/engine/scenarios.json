@@ -1,0 +1,135 @@
+{
+ "normal": {
+  "kind": "normal",
+  "label": "Bình thường (trưa)",
+  "desc": "Lưu lượng trung bình buổi trưa",
+  "demandVph": 7000,
+  "mix": [
+   0.78,
+   0.17,
+   0.02,
+   0.03
+  ],
+  "speedFactor": 1.0,
+  "headwayFactor": 1.0,
+  "accelFactor": 1.0,
+  "pedRate": 40,
+  "inboundBias": 1.0,
+  "incident": false,
+  "event": false
+ },
+ "morning": {
+  "kind": "morning",
+  "label": "Cao điểm sáng",
+  "desc": "Dòng xe từ phía Tây/Nam đổ vào trung tâm, nhiều xe máy",
+  "demandVph": 10000,
+  "mix": [
+   0.8,
+   0.16,
+   0.02,
+   0.02
+  ],
+  "speedFactor": 1.0,
+  "headwayFactor": 1.0,
+  "accelFactor": 1.0,
+  "pedRate": 60,
+  "inboundBias": 1.8,
+  "incident": false,
+  "event": false
+ },
+ "evening": {
+  "kind": "evening",
+  "label": "Cao điểm chiều",
+  "desc": "Dòng xe từ trung tâm ra ngoài, kéo dài, nhiều ô tô hơn",
+  "demandVph": 11000,
+  "mix": [
+   0.76,
+   0.2,
+   0.02,
+   0.02
+  ],
+  "speedFactor": 1.0,
+  "headwayFactor": 1.0,
+  "accelFactor": 1.0,
+  "pedRate": 70,
+  "inboundBias": 0.55,
+  "incident": false,
+  "event": false
+ },
+ "extreme": {
+  "kind": "extreme",
+  "label": "Tắc cực đoan",
+  "desc": "Nhu cầu vượt năng lực mạng lưới (~1.6x cao điểm sáng)",
+  "demandVph": 16000,
+  "mix": [
+   0.79,
+   0.17,
+   0.02,
+   0.02
+  ],
+  "speedFactor": 1.0,
+  "headwayFactor": 1.0,
+  "accelFactor": 1.0,
+  "pedRate": 80,
+  "inboundBias": 1.2,
+  "incident": false,
+  "event": false
+ },
+ "incident": {
+  "kind": "incident",
+  "label": "Sự cố trên Xã Đàn",
+  "desc": "Xe hỏng chặn 2/3 mặt đường một chiều Xã Đàn trong 20 phút, xe tự tìm đường khác",
+  "demandVph": 9000,
+  "mix": [
+   0.78,
+   0.17,
+   0.02,
+   0.03
+  ],
+  "speedFactor": 1.0,
+  "headwayFactor": 1.0,
+  "accelFactor": 1.0,
+  "pedRate": 40,
+  "inboundBias": 1.0,
+  "incident": true,
+  "event": false
+ },
+ "rain": {
+  "kind": "rain",
+  "label": "Mưa lớn",
+  "desc": "Tốc độ mong muốn giảm 30%, giãn khoảng cách, tăng tốc chậm",
+  "demandVph": 9000,
+  "mix": [
+   0.72,
+   0.23,
+   0.02,
+   0.03
+  ],
+  "speedFactor": 0.7,
+  "headwayFactor": 1.35,
+  "accelFactor": 0.8,
+  "pedRate": 20,
+  "inboundBias": 1.0,
+  "incident": false,
+  "event": false
+ },
+ "event": {
+  "kind": "event",
+  "label": "Sự kiện Gò Đống Đa",
+  "desc": "Khoảng 3000 trong tổng 8000 xe/giờ đổ về khu Gò Đống Đa (Tây Sơn), nhiều người đi bộ",
+  "demandVph": 8000,
+  "mix": [
+   0.82,
+   0.14,
+   0.03,
+   0.01
+  ],
+  "speedFactor": 1.0,
+  "headwayFactor": 1.0,
+  "accelFactor": 1.0,
+  "pedRate": 120,
+  "inboundBias": 1.0,
+  "incident": false,
+  "event": true
+ }
+}

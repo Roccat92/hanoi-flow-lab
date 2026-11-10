@@ -1,0 +1,6 @@
+eclipse-sumo>=1.20
+traci>=1.20
+sumolib>=1.20
+fastapi>=0.110
+uvicorn[standard]>=0.29
+pyproj>=3.6
