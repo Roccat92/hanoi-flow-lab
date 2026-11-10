@@ -5,43 +5,43 @@
  "results": [
   {
    "target": 1000,
-   "reached": 970,
-   "measuredAt": 999,
-   "simTimeToFillS": 270.5,
-   "msPerStep": 0.456,
-   "stepsPerSec": 2191,
-   "realtimeFactor": 1095.4,
-   "fillWallS": 0.2
+   "reached": 971,
+   "measuredAt": 1000,
+   "simTimeToFillS": 252.5,
+   "msPerStep": 1.575,
+   "stepsPerSec": 635,
+   "realtimeFactor": 317.5,
+   "fillWallS": 0.9
   },
   {
    "target": 3000,
    "reached": 2910,
-   "measuredAt": 2999,
-   "simTimeToFillS": 661,
-   "msPerStep": 1.639,
-   "stepsPerSec": 610,
-   "realtimeFactor": 305,
-   "fillWallS": 1.3
+   "measuredAt": 2996,
+   "simTimeToFillS": 435.5,
+   "msPerStep": 3.435,
+   "stepsPerSec": 291,
+   "realtimeFactor": 145.5,
+   "fillWallS": 2.1
   },
   {
    "target": 5000,
-   "reached": 4851,
-   "measuredAt": 4999,
-   "simTimeToFillS": 1192,
-   "msPerStep": 2.991,
-   "stepsPerSec": 334,
-   "realtimeFactor": 167.2,
-   "fillWallS": 4.3
+   "reached": 4852,
+   "measuredAt": 4997,
+   "simTimeToFillS": 515.5,
+   "msPerStep": 5.149,
+   "stepsPerSec": 194,
+   "realtimeFactor": 97.1,
+   "fillWallS": 3.4
   },
   {
    "target": 10000,
-   "reached": 9700,
-   "measuredAt": 9928,
-   "simTimeToFillS": 5074,
-   "msPerStep": 5.998,
-   "stepsPerSec": 167,
-   "realtimeFactor": 83.4,
-   "fillWallS": 41
+   "reached": 9701,
+   "measuredAt": 9996,
+   "simTimeToFillS": 869,
+   "msPerStep": 9.036,
+   "stepsPerSec": 111,
+   "realtimeFactor": 55.3,
+   "fillWallS": 9.9
   }
  ]
 }

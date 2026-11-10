@@ -245,7 +245,19 @@ export class Simulation {
   /** signalised zebra may start: nothing occupies or has reserved the movements it crosses, and the strip is empty */
   private zebraClear(z: Zebra) {
     for (const mi of z.blocks) if (this.mvV[mi].length || this.resv[mi]) return false;
-    return this.stripEmpty(z.link, z.sL, 1.0) && (z.twin < 0 || this.stripEmpty(z.twin, z.sT, 1.0));
+    if (!this.stripEmpty(z.link, z.sL, 1.0)) return false;
+    // vehicles that already passed the stop line and are still moving toward the strip
+    const stopS = this.net.links[z.link].stopS;
+    for (const v of this.linkV[z.link]) if (v.v > 0.5 && v.s > stopS - 0.5 - v.v && v.s - v.len < z.sL + 1.0) return false;
+    // ...or cannot stop before the stop line any more (short links: also vehicles still in the upstream junction)
+    const Lk = this.net.links[z.link];
+    for (const v of this.linkV[z.link]) if (v.s < stopS && v.v > 2 && stopS - v.s < (v.v * v.v) / 8 + 1) return false;
+    for (const mi of Lk.inMoves) { const m = this.net.moves[mi]; for (const o of this.mvV[mi]) if (o.v > 2 && (m.len - o.s) + (stopS - Lk.startS) < (o.v * o.v) / 8 + 1) return false;
+      const up = this.net.links[m.inL];
+      for (const o of this.linkV[m.inL]) if (o.v > 2 && o.s > up.stopS - 1 && (up.len - o.s) + m.len + (stopS - Lk.startS) < (o.v * o.v) / 8 + 1) return false; }
+    // outgoing side: anything that left the junction and has not yet cleared the strip
+    if (z.twin >= 0) for (const v of this.linkV[z.twin]) if (v.s - v.len < z.sT + 1.0) return false;
+    return true;
   }
   private stripEmpty(l: number, sz: number, h: number) {
     for (const v of this.linkV[l]) if (v.s > sz - h && v.s - v.len < sz + h) return false;
@@ -751,6 +763,9 @@ export class Simulation {
       const ot = this.tailOf(this.linkV[m.outL], v.lat, v.w, out.startS + 30);
       if (ot) { gap = m.len - v.s + ot.s - ot.len - out.startS; vl = ot.v; }
     }
+    // short downstream link: brake already for its stop line when every way out of it is red or a crosswalk is in use
+    const dStop = m.len - v.s + out.stopS - out.startS;
+    if (dStop < gap && dStop < 45 && out.outMoves.length && out.outMoves.every(mo => this.zebraBlock[mo] > 0 || this.sigColor(mo) === 'R' || this.sigColor(mo) === 'Y')) { gap = dStop; vl = 0; }
     const vmax = Math.min(out.vmax, m.turn === 'T' ? out.vmax : 6.5, this.net.links[m.inL].alley ? 4 : 99);
     v.acc = this.idm(v, vmax, gap, vl);
     v.lim = gap - 0.1;
@@ -880,7 +895,7 @@ export class Simulation {
       const over = v.s - m.len;
       removeFrom(this.mvV[m.id], v);
       const out = this.net.links[ol];
-      v.mv = -1; v.link = ol; v.s = out.startS + over;
+      v.mv = -1; v.link = ol; v.s = Math.min(out.startS + over, Math.max(out.startS, out.stopS - 0.05)); // never jump over the next stop line in one step
       v.next = this.nextLinkOf(v, ol);
       this.linkV[ol].push(v);
     }

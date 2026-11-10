@@ -1,6 +1,6 @@
 # HANOI FLOW LAB
 
-Phòng thí nghiệm mô phỏng giao thông Hà Nội, chạy trên trình duyệt: bản đồ OpenStreetMap thật của một khu Đống Đa, xe máy lách làn (sublane), ô tô, xe buýt, xe tải, đèn tín hiệu với 3 bộ điều khiển (cố định, cảm biến, AI điều phối) và chế độ so sánh khoa học.
+Phòng thí nghiệm mô phỏng giao thông Hà Nội, chạy trên trình duyệt: bản đồ OpenStreetMap thật của một khu Đống Đa, giao thông hỗn hợp kiểu Hà Nội (xe máy lách, xe đạp, ô tô, taxi, van, SUV, xe buýt, xe tải, người đi bộ, ngõ ngách, va quẹt), đèn tín hiệu với 3 bộ điều khiển (cố định, cảm biến, AI điều phối) và chế độ so sánh khoa học.
 
 - Bản chạy thử: https://roccat92.github.io/hanoi-flow-lab/
 - Khu vực: Ô Chợ Dừa - Xã Đàn - Tây Sơn - Thái Hà - Hoàng Cầu - Láng Hạ (bbox 21.004-21.024 N, 105.814-105.838 E)
@@ -15,50 +15,73 @@ Phòng thí nghiệm mô phỏng giao thông Hà Nội, chạy trên trình duy�
 
 Engine TS: IDM theo từng loại xe, mô hình làn phụ (xe máy chọn vị trí ngang để lách khe, ô tô đổi làn kiểu MOBIL rút gọn, xếp làn trước khi rẽ), xung đột trong nút tính bằng hình học quỹ đạo, giữ chỗ (reservation) khi xe cam kết đi qua nút, luật "không vào nút khi lối ra chưa có chỗ" (tràn ngược), ưu tiên theo cấp đường ở nút không đèn, định tuyến lại theo thời gian thực mỗi 60 s. Không teleport, không xoá xe: xe chưa vào được mạng thì xếp hàng chờ ở cửa vào và vẫn bị tính trễ.
 
-Lưu ý khi chạy SUMO ở chế độ backend: lớp đèn tín hiệu và bảng kiểm tra nút/xe chưa nối với SUMO (chỉ có xe, số liệu và nhật ký quyết định AI).
+### Giao thông hỗn hợp kiểu Hà Nội
+
+- 8 loại phương tiện: xe máy, xe đạp (~2%), ô tô con, taxi, xe van, SUV, xe buýt, xe tải.
+- Thanh "mức độ hỗn loạn" (0-1, mặc định 0.6, tham số URL `chaos`): xe máy bám sát hơn, lách khe, tràn ra mép đường khi kẹt, bò qua vạch dừng khi đỏ; ô tô nhích vào khe và bị xe máy vây; chấp nhận khe hở gắt hơn khi rẽ trái/ra khỏi ngõ; thỉnh thoảng vượt đèn đỏ (chỉ khi nút trống, không có người đi bộ, không có luồng xung đột). Mọi kiểm tra khoảng cách vẫn dựa trên hình học nên không bao giờ chồng xe.
+- Người đi bộ qua vạch kẻ: vạch ở nút có đèn (đi khi luồng xe cắt ngang đang đỏ) và vạch giữa phố từ OSM (chờ khe hở). Xe dừng nhường người đang qua đường.
+- Ngõ/ngách: đường hẹp, chủ yếu xe máy, ô tô chỉ vào ngõ đủ rộng, xe tải/xe buýt không vào; ra khỏi ngõ bị phạt thời gian (ma sát). Cây ngõ cụt được gộp thành "vùng dân cư" phát sinh/thu hút chuyến đi (dữ liệu suy luận, có đánh dấu trên giao diện).
+- Xe buýt dừng đón trả khách tại điểm dừng OSM.
+- Va quẹt (bật/tắt, tần suất mỗi giờ, thời lượng 20-40 phút mô phỏng, có đám đông xem): 2 xe gần nhau dừng lại, tài xế xuống cãi nhau, chắn một phần đường, xe khác lách qua. Lịch va quẹt sinh từ seed riêng nên giống hệt nhau giữa các bộ điều khiển trong chế độ so sánh. Nhật ký "🚨 Sự cố & sự kiện" ghi bằng tiếng Việt.
+- Chưa làm: đi ngược chiều ngắn ở mép đường và cắt góc khi rẽ trái sớm (chỉ có chấp nhận khe hở gắt), vì chưa bảo đảm được không chồng xe.
+
+### Trình chỉnh sửa bản đồ (nút "Chỉnh sửa")
+
+Thêm/xoá/dời đèn, chu kỳ, độ lệch pha và thời gian xanh từng pha; số làn, tốc độ, đóng đường, một chiều, cấm rẽ; hệ số nhu cầu từng vùng; mức hỗn loạn, vi phạm, va quẹt. Áp dụng ngay cho mô phỏng và cho chế độ so sánh. Lưu/mở kịch bản trong trình duyệt (localStorage), xuất/nhập JSON, khôi phục kịch bản Hà Nội mặc định. Dữ liệu suy luận (số làn, tốc độ, một chiều không có trong OSM) có nhãn "suy luận".
+
+### Chế độ SUMO
+
+Lớp đèn và bảng kiểm tra nút/xe giờ chạy qua backend: mỗi luồng rẽ của bản đồ TS được ghép với link điều khiển của đèn SUMO theo vị trí và hướng vào/ra (171/292 luồng ghép trực tiếp, phần còn lại lấy màu của cùng hướng vào; 28/32 nút đèn TS có đèn SUMO tương ứng). Bảng nút hiển thị pha SUMO, hàng chờ từng hướng, quan sát và áp lực của AI; bảng xe đọc qua TraCI.
 
 ## Bộ điều khiển đèn
 
 - Cố định: chu kỳ 90 s, chia thời gian xanh theo số làn và cấp đường.
 - Cảm biến (actuated): xanh tối thiểu, kéo dài khi còn xe tới trong 3 s, xanh tối đa 60 s, bỏ qua pha không có xe.
-- AI điều phối: max-pressure có trọng số (PCU, xe buýt ưu tiên x3) + dự báo 12 s, gồm cả đoàn xe vừa được nút phía trên xả (phối hợp), trừ phần đường ra đã đầy, cộng thời gian chờ. Mỗi quyết định có lời giải thích sinh từ số liệu quan sát thật.
+- AI điều phối v2 (nhận biết mạng lưới): với mỗi pha, lượng xe xả được = min(hàng chờ + 0.7 xe sắp tới trong 12 s + 0.5 đoàn xe nút trên vừa xả, năng lực bão hoà x 12 s, chỗ trống đường ra); áp lực = lượng xả được - 0.35 hàng chờ đường ra + 3 x (chờ lâu nhất/60)^2 + người đi bộ chờ. Chỉ đổi pha khi lợi hơn chi phí mất xanh (vàng + đỏ toàn phần); đổi ngay khi đường ra tràn ngược; giữ xanh khi đoàn xe sắp tới < 6 s; cắt xanh khi hết xe 2.5 s; xanh tối đa 90 s. Tham số chỉnh trên seed 4 (không nằm trong seed đánh giá 1-3). Mỗi quyết định có lời giải thích sinh từ số liệu thật.
 - Lớp an toàn dùng chung cho cả 3: không bao giờ có 2 luồng ưu tiên xung đột cùng xanh, vàng 3 s, đỏ toàn phần 2 s, xanh tối thiểu 8 s (dài hơn khi có người đi bộ chờ), xanh tối đa 90 s, chống bỏ đói (pha có nhu cầu bị đỏ quá 120 s thì bị ép chuyển).
 
 ## Kết quả so sánh đo thật (engine TS, 30 phút, trung bình seed 1, 2, 3)
 
-Trễ trung bình mỗi chuyến đã hoàn thành (giây, càng thấp càng tốt) / số chuyến hoàn thành:
+Mỗi ô: trễ TB mỗi chuyến (s) / tổng giờ-xe mất (gồm cả xe chưa xong và xe chờ ở cửa vào) / số chuyến hoàn thành. In đậm = ít giờ-xe mất nhất. Cùng seed, cùng nhu cầu, mức hỗn loạn 0.6, va quẹt 1 lần/giờ (lịch giống hệt nhau cho cả 3 bộ điều khiển).
 
-| Kịch bản | Cố định | Cảm biến | AI điều phối |
-|---|---|---|---|
-| Bình thường | 126.8 / 2866 | **82.5** / 2967 | 85.3 / 2965 |
-| Cao điểm sáng | 194.2 / 3407 | **172.3** / 3658 | 175.1 / 3619 |
-| Cao điểm chiều | 278.4 / 2782 | 266.2 / 2973 | **260.9** / 2982 |
-| Tắc cực đoan | 281.5 / 4274 | 254.5 / 4246 | **243.7** / 4303 |
-| Sự cố Xã Đàn | 161.1 / 3357 | **125.4** / 3560 | 127.9 / 3512 |
-| Mưa lớn | 261.2 / 2811 | **215.9** / 3104 | 217.6 / 3063 |
-| Sự kiện Gò Đống Đa | 108.4 / 2007 | 95.3 / 2022 | **85.2** / 2043 |
+| Kịch bản | Cố định | Cảm biến | AI v2 | AI v2 so với cố định (giờ-xe) | AI v2 so với cảm biến (giờ-xe) | Xung đột người đi bộ (9 lượt) | Va quẹt mỗi lượt |
+|---|---|---|---|---|---|---|---|
+| Bình thường | 106.5 / 104.5 / 2803 | **96.4 / 99.6** / 2793 | 86.7 / 102.0 / 2760 | -2.5% | +2.4% | 0 | 0-4 |
+| Cao điểm sáng | 148.2 / 207.8 / 3667 | 149.8 / 211.0 / 3734 | **142.3 / 206.4** / 3812 | -0.7% | -2.2% | 0 | 0-4 |
+| Cao điểm chiều | 195.0 / 373.2 / 3436 | 177.7 / 401.3 / 3348 | **182.5 / 364.7** / 3437 | -2.3% | -9.1% | 0 | 0-4 |
+| Tắc cực đoan | 219.6 / 545.0 / 5018 | 210.1 / 560.9 / 4982 | **202.5 / 523.4** / 5130 | -4.0% | -6.7% | 0 | 0-4 |
+| Sự cố Xã Đàn | 128.4 / 178.7 / 3431 | 121.1 / 166.5 / 3530 | **108.6 / 136.0** / 3574 | -23.9% | -18.3% | 0 | 0-4 |
+| Mưa lớn | 237.1 / 303.7 / 3015 | 230.1 / 285.3 / 3127 | **210.3 / 267.6** / 3197 | -11.9% | -6.2% | 0 | 0-4 |
+| Sự kiện Gò Đống Đa | 94.4 / 109.3 / 3244 | 90.0 / 98.4 / 3278 | **85.4 / 92.2** / 3247 | -15.6% | -6.3% | 0 | 0-4 |
 
-Đọc kết quả trung thực: AI và cảm biến đều tốt hơn rõ rệt so với đèn cố định, nhưng AI **không** thắng cảm biến ở mọi kịch bản; chênh lệch giữa hai bộ này chỉ vài phần trăm. 0 vi phạm an toàn tín hiệu ở mọi lần chạy. Số liệu đầy đủ: `results/compare_*.json` và `results/compare_*.log`. So sánh bằng SUMO: `results/sumo_compare_*.json`.
+Đọc kết quả trung thực:
+- AI v2 ít giờ-xe mất nhất ở 6/7 kịch bản; ở "Bình thường" thua đèn cảm biến 2.4%. Ở cao điểm sáng mọi bộ gần như ngang nhau (chênh < 3%).
+- Lợi thế lớn nhất khi mạng bị xáo trộn (sự cố, mưa, sự kiện: -6% đến -18% so với cảm biến), nhỏ khi mạng bình thường.
+- AI v1 (đo trên engine ngay trước bản sửa an toàn người đi bộ, nên không so trực tiếp từng con số): thua đèn cố định ở cao điểm sáng (219.8 so với 202.6 giờ-xe) và chỉ thắng cảm biến ở 1/7 kịch bản (cao điểm chiều, 337.0 giờ-xe, tốt hơn cả AI v2 lần này).
+- 0 vi phạm an toàn tín hiệu, 0 xung đột người đi bộ, 0 chồng xe ở mọi lượt chạy. Số liệu đầy đủ: `results/compare_*.json`, `results/compare_*.log`, bảng: `results/COMPARISON_v2.md`.
 
 ### So sánh bằng SUMO (cao điểm sáng, 30 phút, seed 1, 2, 3, cùng chuyến đi cho cả 3)
 
-| | Cố định | Cảm biến | AI điều phối |
-|---|---|---|---|
-| Trễ TB (s, SUMO timeLoss) | 160.5 | **118.0** | 141.8 |
-| Chuyến hoàn thành | 2217 | **2334** | 2202 |
+Mạng SUMO được dựng lại từ OSM mới (có cả ngõ), nên mạng kẹt nặng hơn lần trước (tốc độ TB 5-7 km/h, 550-630 xe chờ ở cửa vào).
 
-Trên SUMO, AI điều phối tốt hơn đèn cố định nhưng **thua** đèn cảm biến SUMO. Lý do khả dĩ: bản port AI trong `backend/simcore.py` chỉ quan sát theo làn của SUMO và chưa có phần dự báo đoàn xe từ nút trên như bản TS.
+| | Cố định | Cảm biến | AI v2 |
+|---|---|---|---|
+| Trễ TB (s, SUMO timeLoss) | 145.1 | **106.4** | 145.2 |
+| Thời gian đi TB (s) | 299.8 | **262.1** | 304.4 |
+| Chuyến hoàn thành | 2211 | **2346** | 2278 |
+
+Trên SUMO, AI v2 hoàn thành nhiều chuyến hơn đèn cố định nhưng trễ TB ngang đèn cố định và **thua rõ** đèn cảm biến SUMO. Bản port trong `backend/simcore.py` dùng cùng quy tắc nhưng chỉ quan sát được theo làn SUMO (không có đoàn xe từ nút trên, năng lực bão hoà ước lượng thô), và pha SUMO do netconvert sinh ra khác pha của engine TS.
 
 ## Benchmark (đo trên máy build: Intel Xeon, Node 24, dt = 0.5 s)
 
 | Số xe trong mạng | ms/bước | bước/s | nhanh hơn thời gian thực |
 |---|---|---|---|
-| 1 000 | 0.46 | 2 191 | x1095 |
-| 3 000 | 1.64 | 610 | x305 |
-| 5 000 | 3.0 | 334 | x167 |
-| 10 000 | 6.0 | 167 | x83 |
+| 1 000 | 1.58 | 635 | x318 |
+| 3 000 | 3.44 | 291 | x146 |
+| 5 000 | 5.15 | 194 | x97 |
+| 10 000 | 9.04 | 111 | x55 |
 
-Ở 10 000 xe mạng lưới gần như kẹt cứng (đo hiệu năng, không phải kịch bản thực tế). Hiển thị: headless Chrome dùng SwiftShader (vẽ bằng CPU) đạt ~60 FPS với ~600 xe; chưa đo FPS ở 3k-10k xe trên GPU thật. Có chế độ nhẹ (`?quality=low`). Số liệu: `results/bench.json`.
+Chậm hơn bản trước khoảng 1.5-3 lần vì mạng lớn hơn nhiều (thêm ngõ: 1 582 nút, 4 097 link), có người đi bộ, vùng dân cư, va quẹt và hỗn loạn. Ở 10 000 xe mạng lưới gần như kẹt cứng (đo hiệu năng, không phải kịch bản thực tế). Hiển thị: headless Chrome dùng SwiftShader (vẽ bằng CPU) đạt ~60 FPS với ~600 xe; chưa đo FPS ở 3k-10k xe trên GPU thật. Có chế độ nhẹ (`?quality=low`). Số liệu: `results/bench.json`.
 
 Mô hình chưa hiệu chỉnh với số đếm xe thực tế; nhu cầu (xe/giờ) và tỉ lệ xe máy là giả định, kết quả chỉ có giá trị so sánh tương đối.
 
@@ -67,7 +90,7 @@ Mô hình chưa hiệu chỉnh với số đếm xe thực tế; nhu cầu (xe/g
 ```bash
 npm ci
 npm run dev            # http://localhost:5173/hanoi-flow-lab/
-npm test               # vitest: định tuyến, an toàn tín hiệu, tái lập, không chồng xe
+npm test               # vitest: định tuyến, an toàn tín hiệu, tái lập, không chồng xe, người đi bộ, xe đạp, ngõ, va quẹt, trình chỉnh sửa
 npm run build
 npx tsx scripts/compare.ts morning 30 1,2,3   # so sánh không giao diện
 npx tsx scripts/bench.ts                      # benchmark engine
@@ -84,11 +107,11 @@ python backend/server.py             # ws://localhost:8765/ws
 python backend/compare_sumo.py morning 30 1,2,3
 ```
 
-Tham số URL: `scenario`, `controller` (fixed/actuated/ai), `seed`, `demand`, `speed`, `layer=heat|density`, `night=1`, `quality=low`, `view=split`, `compare=1`, `cap` (giới hạn số xe), `backend`.
+Tham số URL: `scenario`, `controller` (fixed/actuated/ai), `seed`, `demand`, `speed`, `layer=heat|density`, `night=1`, `quality=low`, `view=split`, `compare=1`, `cap` (giới hạn số xe), `chaos` (0-1), `crash=0` (tắt va quẹt), `crashRate` (lần/giờ), `editor=1`, `edits` (JSON), `backend`.
 
 ## Ảnh chụp
 
-`shots/normal.png`, `shots/heatmap.png`, `shots/night.png`, `shots/split.png`, `shots/comparison.png`, `shots/inspect.png`.
+`shots/normal.png`, `shots/heatmap.png`, `shots/night.png`, `shots/split.png`, `shots/comparison.png`, `shots/inspect.png`, `shots/closeup.png` (cận cảnh hỗn loạn), `shots/pedestrians.png`, `shots/crash.png` (va quẹt), `shots/editor.png`, `shots/alleys.png` (ngõ).
 
 ## Giấy phép
 
