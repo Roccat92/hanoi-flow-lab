@@ -1,0 +1,6 @@
+ Retrying in 1 seconds
+1 fixed {'active': 2197, 'waitingEntry': 485, 'completed': 2249, 'throughputVph': 5316.0, 'avgSpeedKmh': 5.4, 'stopped': 1904, 'avgDelayS': 141.4, 'avgTravelS': 295.4, 'wallS': 73.9}
+ Retrying in 1 seconds
+1 actuated {'active': 1946, 'waitingEntry': 605, 'completed': 2380, 'throughputVph': 4896.0, 'avgSpeedKmh': 7.5, 'stopped': 1613, 'avgDelayS': 104.6, 'avgTravelS': 259.5, 'wallS': 72.1}
+ Retrying in 1 seconds
+1 ai {'active': 1976, 'waitingEntry': 648, 'completed': 2307, 'throughputVph': 5184.0, 'avgSpeedKmh': 7.1, 'stopped': 1605, 'avgDelayS': 140.7, 'avgTravelS': 298.6, 'wallS': 122.9}

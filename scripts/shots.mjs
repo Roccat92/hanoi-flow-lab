@@ -66,7 +66,7 @@ for (const [name, q, wait, action] of shots) {
     await new Promise(r => setTimeout(r, 4000));
   }
   if (action === 'modes') {
-    await page.evaluate(() => { const v = window.__views[window.__views.length - 1]; const n = v.net.nodes.filter(n => n.signal); const x = n.reduce((a, b) => a + b.x, 0) / n.length, y = n.reduce((a, b) => a + b.y, 0) / n.length; v.focus(x, y, 1.6); });
+    await page.evaluate(() => { const v = window.__views[window.__views.length - 1]; const n = v.net.nodes.filter(n => n.signal); const x = n.reduce((a, b) => a + b.x, 0) / n.length, y = n.reduce((a, b) => a + b.y, 0) / n.length; v.focus(x, y, 0.62); });
     await new Promise(r => setTimeout(r, 3000));
   }
   if (action === 'results') {

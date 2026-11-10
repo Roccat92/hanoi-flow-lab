@@ -56,5 +56,6 @@ footer { padding: 3px 10px; background: #111218; color: #8d8a7c; font-size: 11px
 .inf { background: #5a3d7a; color: #f0d8ff; padding: 0 4px; font-size: 10px; }
 .warnbox { background: #4a3a10; border: 1px solid #ffd23f; padding: 3px 6px; margin: 4px 0; }
 .events .ev { padding: 2px 0; border-bottom: 1px dashed #2a2b38; font-size: 11px; cursor: pointer; } .ev.crash { color: #ff9f6b; } .ev.crashEnd { color: #9fe0a0; }
-.legend i { font-style: normal; margin-right: 6px; white-space: nowrap; }
+.modelegend { font-size: 11px; white-space: nowrap; }
+.modelegend b { font-weight: normal; margin-right: 8px; }
 .row.kinds { flex-wrap: wrap; gap: 4px 12px; }
