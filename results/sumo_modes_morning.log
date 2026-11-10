@@ -4,3 +4,28 @@
 1 actuated {'active': 1946, 'waitingEntry': 605, 'completed': 2380, 'throughputVph': 4896.0, 'avgSpeedKmh': 7.5, 'stopped': 1613, 'avgDelayS': 104.6, 'avgTravelS': 259.5, 'wallS': 72.1}
  Retrying in 1 seconds
 1 ai {'active': 1976, 'waitingEntry': 648, 'completed': 2307, 'throughputVph': 5184.0, 'avgSpeedKmh': 7.1, 'stopped': 1605, 'avgDelayS': 140.7, 'avgTravelS': 298.6, 'wallS': 122.9}
+ Retrying in 1 seconds
+1 nosignal {'active': 2763, 'waitingEntry': 407, 'completed': 1761, 'throughputVph': 2376.0, 'avgSpeedKmh': 5.0, 'stopped': 2423, 'avgDelayS': 106.9, 'avgTravelS': 257.5, 'wallS': 92.4}
+ Retrying in 1 seconds
+1 major {'active': 2359, 'waitingEntry': 503, 'completed': 2069, 'throughputVph': 3924.0, 'avgSpeedKmh': 4.9, 'stopped': 2081, 'avgDelayS': 123.9, 'avgTravelS': 278.6, 'wallS': 113.3}
+ Retrying in 1 seconds
+2 fixed {'active': 2065, 'waitingEntry': 516, 'completed': 2288, 'throughputVph': 4992.0, 'avgSpeedKmh': 4.8, 'stopped': 1826, 'avgDelayS': 158.2, 'avgTravelS': 313.3, 'wallS': 69.5}
+ Retrying in 1 seconds
+2 actuated {'active': 2121, 'waitingEntry': 504, 'completed': 2244, 'throughputVph': 4020.0, 'avgSpeedKmh': 5.7, 'stopped': 1805, 'avgDelayS': 109.1, 'avgTravelS': 265.6, 'wallS': 69.7}
+ Retrying in 1 seconds
+2 ai {'active': 1900, 'waitingEntry': 544, 'completed': 2425, 'throughputVph': 4920.0, 'avgSpeedKmh': 7.1, 'stopped': 1554, 'avgDelayS': 151.1, 'avgTravelS': 311.9, 'wallS': 121.4}
+ Retrying in 1 seconds
+2 nosignal {'active': 2897, 'waitingEntry': 543, 'completed': 1429, 'throughputVph': 2124.0, 'avgSpeedKmh': 4.7, 'stopped': 2538, 'avgDelayS': 126.1, 'avgTravelS': 277.2, 'wallS': 99.7}
+ Retrying in 1 seconds
+2 major {'active': 2184, 'waitingEntry': 515, 'completed': 2170, 'throughputVph': 4248.0, 'avgSpeedKmh': 6.6, 'stopped': 1851, 'avgDelayS': 132.6, 'avgTravelS': 288.8, 'wallS': 109.1}
+ Retrying in 1 seconds
+3 fixed {'active': 2199, 'waitingEntry': 636, 'completed': 2096, 'throughputVph': 4980.0, 'avgSpeedKmh': 6.5, 'stopped': 1865, 'avgDelayS': 135.6, 'avgTravelS': 290.8, 'wallS': 79.4}
+ Retrying in 1 seconds
+3 actuated {'active': 1911, 'waitingEntry': 605, 'completed': 2415, 'throughputVph': 5352.0, 'avgSpeedKmh': 8.3, 'stopped': 1551, 'avgDelayS': 105.4, 'avgTravelS': 261.1, 'wallS': 70.7}
+ Retrying in 1 seconds
+3 ai {'active': 2129, 'waitingEntry': 700, 'completed': 2102, 'throughputVph': 4416.0, 'avgSpeedKmh': 7.3, 'stopped': 1756, 'avgDelayS': 143.8, 'avgTravelS': 302.6, 'wallS': 131.2}
+ Retrying in 1 seconds
+3 nosignal {'active': 2262, 'waitingEntry': 565, 'completed': 2104, 'throughputVph': 4836.0, 'avgSpeedKmh': 6.2, 'stopped': 1947, 'avgDelayS': 131.5, 'avgTravelS': 287.5, 'wallS': 78.6}
+ Retrying in 1 seconds
+3 major {'active': 2088, 'waitingEntry': 609, 'completed': 2234, 'throughputVph': 5076.0, 'avgSpeedKmh': 6.0, 'stopped': 1795, 'avgDelayS': 131.8, 'avgTravelS': 288.9, 'wallS': 101.6}
+wrote /workspace/hanoi-flow-lab/backend/../results/sumo_compare_morning_30min_x1.0_fixed-actuated-ai-nosignal-major.json

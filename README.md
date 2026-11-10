@@ -138,6 +138,18 @@ Lưu ý:
 - Hệ số an toàn hoà vốn Tối ưu (lai) so với AI v2: 606 giây trễ cho mỗi lần suýt va chạm. Nếu một lần suýt va chạm được coi là tệ hơn mức đó, AI v2 ở mọi nút thắng.
 - Hệ số an toàn hoà vốn Chỉ nút lớn so với AI v2: 771 giây trễ cho mỗi lần suýt va chạm. Nếu một lần suýt va chạm được coi là tệ hơn mức đó, AI v2 ở mọi nút thắng.
 
+Kiểm tra chéo bằng SUMO (cao điểm sáng, seed 1-3; SUMO không có mô hình tự thương lượng kiểu Việt Nam, "tắt đèn" ở SUMO = đường nhỏ nhường đường lớn):
+
+| SUMO mode | Trễ TB (s, chỉ xe đã ra) | Chuyến hoàn thành | Chờ vào mạng | Còn trong mạng |
+|---|---|---|---|---|
+| fixed | 145.1 | 2211 | 546 | 2154 |
+| actuated | 106.4 | 2346 | 571 | 1993 |
+| ai | 145.2 | 2278 | 631 | 2002 |
+| nosignal | 121.5 | 1765 | 505 | 2641 |
+| major | 129.4 | 2158 | 542 | 2210 |
+
+SUMO **không** xác nhận kết quả "không đèn": tắt đèn toàn bộ làm số chuyến hoàn thành giảm mạnh (trễ TB thấp hơn chỉ vì chỉ tính xe đã ra). Đèn cảm biến tốt nhất trên SUMO; "chỉ nút lớn" đứng giữa. Vì vậy kết luận "bỏ đèn ở nút nhỏ" phụ thuộc vào mô hình hành vi ở nút không đèn và cần số liệu thực đo trước khi áp dụng.
+
 Số liệu: `results/EXPERIMENTS.md`, `results/experiments.json`, `results/optimize.json`, `results/rules.json`. Chạy lại: `npx tsx scripts/optimize.ts && npx tsx scripts/derive_rules.ts && npx tsx scripts/experiments.ts`.
 
 ## Benchmark (đo trên máy build: Intel Xeon, Node 24, dt = 0.5 s)

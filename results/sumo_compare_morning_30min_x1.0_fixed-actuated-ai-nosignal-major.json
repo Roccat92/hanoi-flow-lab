@@ -1,0 +1,403 @@
+{
+ "engine": "SUMO",
+ "scenario": "morning",
+ "minutes": 30,
+ "seeds": [
+  1,
+  2,
+  3
+ ],
+ "demandScale": 1.0,
+ "runs": [
+  {
+   "seed": 1,
+   "results": [
+    {
+     "controller": "fixed",
+     "summary": {
+      "t": 1800.0,
+      "active": 2197,
+      "waitingEntry": 485,
+      "spawned": 4446,
+      "completed": 2249,
+      "throughputVph": 5316.0,
+      "avgSpeedKmh": 5.362867863198684,
+      "stopped": 1904,
+      "avgDelayS": 141.36993051711477,
+      "avgTravelS": 295.3821698532681,
+      "avgStops": 0,
+      "pcuQueued": 0,
+      "longStopped": 0,
+      "co2kgH": 0,
+      "pedWaitS": 0,
+      "maxQueue": 0,
+      "recentDelayS": 174.97857022894402,
+      "trips": 4934,
+      "switches": 0,
+      "wallS": 73.9
+     }
+    },
+    {
+     "controller": "actuated",
+     "summary": {
+      "t": 1800.0,
+      "active": 1946,
+      "waitingEntry": 605,
+      "spawned": 4326,
+      "completed": 2380,
+      "throughputVph": 4896.0,
+      "avgSpeedKmh": 7.475333083079732,
+      "stopped": 1613,
+      "avgDelayS": 104.5725914822978,
+      "avgTravelS": 259.49306722689073,
+      "avgStops": 0,
+      "pcuQueued": 0,
+      "longStopped": 0,
+      "co2kgH": 0,
+      "pedWaitS": 0,
+      "maxQueue": 0,
+      "recentDelayS": 131.2023311499967,
+      "trips": 4934,
+      "switches": 0,
+      "wallS": 72.1
+     }
+    },
+    {
+     "controller": "ai",
+     "summary": {
+      "t": 1800.0,
+      "active": 1976,
+      "waitingEntry": 648,
+      "spawned": 4283,
+      "completed": 2307,
+      "throughputVph": 5184.0,
+      "avgSpeedKmh": 7.093680942079529,
+      "stopped": 1605,
+      "avgDelayS": 140.68603229966376,
+      "avgTravelS": 298.586692674469,
+      "avgStops": 0,
+      "pcuQueued": 0,
+      "longStopped": 0,
+      "co2kgH": 0,
+      "pedWaitS": 0,
+      "maxQueue": 0,
+      "recentDelayS": 207.98924779988698,
+      "trips": 4934,
+      "switches": 895,
+      "wallS": 122.9
+     }
+    },
+    {
+     "controller": "nosignal",
+     "summary": {
+      "t": 1800.0,
+      "active": 2763,
+      "waitingEntry": 407,
+      "spawned": 4524,
+      "completed": 1761,
+      "throughputVph": 2376.0,
+      "avgSpeedKmh": 4.9523900272552055,
+      "stopped": 2423,
+      "avgDelayS": 106.88549513027917,
+      "avgTravelS": 257.4633730834753,
+      "avgStops": 0,
+      "pcuQueued": 0,
+      "longStopped": 0,
+      "co2kgH": 0,
+      "pedWaitS": 0,
+      "maxQueue": 0,
+      "recentDelayS": 137.09180418209223,
+      "trips": 4934,
+      "switches": 0,
+      "wallS": 92.4
+     }
+    },
+    {
+     "controller": "major",
+     "summary": {
+      "t": 1800.0,
+      "active": 2359,
+      "waitingEntry": 503,
+      "spawned": 4428,
+      "completed": 2069,
+      "throughputVph": 3924.0,
+      "avgSpeedKmh": 4.91772686886073,
+      "stopped": 2081,
+      "avgDelayS": 123.94426950156297,
+      "avgTravelS": 278.5836152730788,
+      "avgStops": 0,
+      "pcuQueued": 0,
+      "longStopped": 0,
+      "co2kgH": 0,
+      "pedWaitS": 0,
+      "maxQueue": 0,
+      "recentDelayS": 145.54543523755763,
+      "trips": 4934,
+      "switches": 604,
+      "wallS": 113.3
+     }
+    }
+   ]
+  },
+  {
+   "seed": 2,
+   "results": [
+    {
+     "controller": "fixed",
+     "summary": {
+      "t": 1800.0,
+      "active": 2065,
+      "waitingEntry": 516,
+      "spawned": 4353,
+      "completed": 2288,
+      "throughputVph": 4992.0,
+      "avgSpeedKmh": 4.846260541967529,
+      "stopped": 1826,
+      "avgDelayS": 158.18343365360954,
+      "avgTravelS": 313.26638986013984,
+      "avgStops": 0,
+      "pcuQueued": 0,
+      "longStopped": 0,
+      "co2kgH": 0,
+      "pedWaitS": 0,
+      "maxQueue": 0,
+      "recentDelayS": 226.99870216411287,
+      "trips": 4869,
+      "switches": 0,
+      "wallS": 69.5
+     }
+    },
+    {
+     "controller": "actuated",
+     "summary": {
+      "t": 1800.0,
+      "active": 2121,
+      "waitingEntry": 504,
+      "spawned": 4365,
+      "completed": 2244,
+      "throughputVph": 4020.0,
+      "avgSpeedKmh": 5.739509390546542,
+      "stopped": 1805,
+      "avgDelayS": 109.14788922539508,
+      "avgTravelS": 265.575311942959,
+      "avgStops": 0,
+      "pcuQueued": 0,
+      "longStopped": 0,
+      "co2kgH": 0,
+      "pedWaitS": 0,
+      "maxQueue": 0,
+      "recentDelayS": 103.28337097944383,
+      "trips": 4869,
+      "switches": 0,
+      "wallS": 69.7
+     }
+    },
+    {
+     "controller": "ai",
+     "summary": {
+      "t": 1800.0,
+      "active": 1900,
+      "waitingEntry": 544,
+      "spawned": 4325,
+      "completed": 2425,
+      "throughputVph": 4920.0,
+      "avgSpeedKmh": 7.1220740837367,
+      "stopped": 1554,
+      "avgDelayS": 151.1374319208963,
+      "avgTravelS": 311.92639175257733,
+      "avgStops": 0,
+      "pcuQueued": 0,
+      "longStopped": 0,
+      "co2kgH": 0,
+      "pedWaitS": 0,
+      "maxQueue": 0,
+      "recentDelayS": 155.3273869475734,
+      "trips": 4869,
+      "switches": 896,
+      "wallS": 121.4
+     }
+    },
+    {
+     "controller": "nosignal",
+     "summary": {
+      "t": 1800.0,
+      "active": 2897,
+      "waitingEntry": 543,
+      "spawned": 4326,
+      "completed": 1429,
+      "throughputVph": 2124.0,
+      "avgSpeedKmh": 4.666745158144527,
+      "stopped": 2538,
+      "avgDelayS": 126.13956768221107,
+      "avgTravelS": 277.241077676697,
+      "avgStops": 0,
+      "pcuQueued": 0,
+      "longStopped": 0,
+      "co2kgH": 0,
+      "pedWaitS": 0,
+      "maxQueue": 0,
+      "recentDelayS": 213.48917383156396,
+      "trips": 4869,
+      "switches": 0,
+      "wallS": 99.7
+     }
+    },
+    {
+     "controller": "major",
+     "summary": {
+      "t": 1800.0,
+      "active": 2184,
+      "waitingEntry": 515,
+      "spawned": 4354,
+      "completed": 2170,
+      "throughputVph": 4248.0,
+      "avgSpeedKmh": 6.617391135229347,
+      "stopped": 1851,
+      "avgDelayS": 132.56082086060064,
+      "avgTravelS": 288.79976958525344,
+      "avgStops": 0,
+      "pcuQueued": 0,
+      "longStopped": 0,
+      "co2kgH": 0,
+      "pedWaitS": 0,
+      "maxQueue": 0,
+      "recentDelayS": 150.51218370907034,
+      "trips": 4869,
+      "switches": 609,
+      "wallS": 109.1
+     }
+    }
+   ]
+  },
+  {
+   "seed": 3,
+   "results": [
+    {
+     "controller": "fixed",
+     "summary": {
+      "t": 1800.0,
+      "active": 2199,
+      "waitingEntry": 636,
+      "spawned": 4295,
+      "completed": 2096,
+      "throughputVph": 4980.0,
+      "avgSpeedKmh": 6.533279498751989,
+      "stopped": 1865,
+      "avgDelayS": 135.61011577938277,
+      "avgTravelS": 290.79723282442745,
+      "avgStops": 0,
+      "pcuQueued": 0,
+      "longStopped": 0,
+      "co2kgH": 0,
+      "pedWaitS": 0,
+      "maxQueue": 0,
+      "recentDelayS": 155.78552709196373,
+      "trips": 4932,
+      "switches": 0,
+      "wallS": 79.4
+     }
+    },
+    {
+     "controller": "actuated",
+     "summary": {
+      "t": 1800.0,
+      "active": 1911,
+      "waitingEntry": 605,
+      "spawned": 4326,
+      "completed": 2415,
+      "throughputVph": 5352.0,
+      "avgSpeedKmh": 8.32067239928126,
+      "stopped": 1551,
+      "avgDelayS": 105.38304554203265,
+      "avgTravelS": 261.107867494824,
+      "avgStops": 0,
+      "pcuQueued": 0,
+      "longStopped": 0,
+      "co2kgH": 0,
+      "pedWaitS": 0,
+      "maxQueue": 0,
+      "recentDelayS": 103.8457716458215,
+      "trips": 4932,
+      "switches": 0,
+      "wallS": 70.7
+     }
+    },
+    {
+     "controller": "ai",
+     "summary": {
+      "t": 1800.0,
+      "active": 2129,
+      "waitingEntry": 700,
+      "spawned": 4231,
+      "completed": 2102,
+      "throughputVph": 4416.0,
+      "avgSpeedKmh": 7.344155309289409,
+      "stopped": 1756,
+      "avgDelayS": 143.75274279161582,
+      "avgTravelS": 302.58325404376785,
+      "avgStops": 0,
+      "pcuQueued": 0,
+      "longStopped": 0,
+      "co2kgH": 0,
+      "pedWaitS": 0,
+      "maxQueue": 0,
+      "recentDelayS": 175.01822654431214,
+      "trips": 4932,
+      "switches": 913,
+      "wallS": 131.2
+     }
+    },
+    {
+     "controller": "nosignal",
+     "summary": {
+      "t": 1800.0,
+      "active": 2262,
+      "waitingEntry": 565,
+      "spawned": 4366,
+      "completed": 2104,
+      "throughputVph": 4836.0,
+      "avgSpeedKmh": 6.173786615325229,
+      "stopped": 1947,
+      "avgDelayS": 131.47336781010233,
+      "avgTravelS": 287.49239543726236,
+      "avgStops": 0,
+      "pcuQueued": 0,
+      "longStopped": 0,
+      "co2kgH": 0,
+      "pedWaitS": 0,
+      "maxQueue": 0,
+      "recentDelayS": 159.72941791301645,
+      "trips": 4932,
+      "switches": 0,
+      "wallS": 78.6
+     }
+    },
+    {
+     "controller": "major",
+     "summary": {
+      "t": 1800.0,
+      "active": 2088,
+      "waitingEntry": 609,
+      "spawned": 4322,
+      "completed": 2234,
+      "throughputVph": 5076.0,
+      "avgSpeedKmh": 6.027606642034652,
+      "stopped": 1795,
+      "avgDelayS": 131.81000285801696,
+      "avgTravelS": 288.94695613249775,
+      "avgStops": 0,
+      "pcuQueued": 0,
+      "longStopped": 0,
+      "co2kgH": 0,
+      "pedWaitS": 0,
+      "maxQueue": 0,
+      "recentDelayS": 171.1620663808926,
+      "trips": 4932,
+      "switches": 671,
+      "wallS": 101.6
+     }
+    }
+   ]
+  }
+ ]
+}
