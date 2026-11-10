@@ -27,17 +27,24 @@ export class FixedTime implements Controller {
   kind: ControllerKind = 'fixed'; label = 'Cố định thời gian';
   private splits = new Map<number, number[]>();
   constructor(private cycle = 90) {}
-  setSplits(node: Node, w: number[], pedMin: number[]) {
+  cycles = new Map<number, number>();
+  setSplits(node: Node, w: number[], pedMin: number[], cycle = this.cycle) {
     const lost = node.phases.length * (SAFETY.YELLOW + SAFETY.ALL_RED);
     const tot = w.reduce((a, b) => a + b, 0) || 1;
-    this.splits.set(node.id, w.map((x, i) => Math.max(node.phases[i].pedOnly ? pedMin[i] : 15, Math.round((this.cycle - lost) * x / tot))));
+    this.cycles.set(node.id, cycle);
+    this.splits.set(node.id, w.map((x, i) => Math.max(node.phases[i].pedOnly ? pedMin[i] : 15, Math.round((cycle - lost) * x / tot))));
+  }
+  /** editor: exact green times per phase (seconds), clamped to the safety minimum */
+  setExact(node: Node, g: number[], pedMin: number[]) {
+    const sp = node.phases.map((p, i) => Math.max(SAFETY.MIN_GREEN, p.pedOnly ? pedMin[i] : 0, Math.round(g[i] ?? 20)));
+    this.splits.set(node.id, sp); this.cycles.set(node.id, sp.reduce((a, b) => a + b, 0) + node.phases.length * (SAFETY.YELLOW + SAFETY.ALL_RED));
   }
   getSplits(id: number) { return this.splits.get(id); }
   decide(node: Node, st: SignalState): Decision | null {
     const sp = this.splits.get(node.id)!;
     if (st.tStage >= sp[st.phase]) {
       const to = (st.phase + 1) % node.phases.length;
-      return { switchTo: to, text: `Hết thời gian xanh cố định ${sp[st.phase]}s của pha ${st.phase + 1}, chuyển theo chu kỳ ${this.cycle}s`, values: { green: st.tStage, split: sp[st.phase] } };
+      return { switchTo: to, text: `Hết thời gian xanh cố định ${sp[st.phase]}s của pha ${st.phase + 1}, chuyển theo chu kỳ ${this.cycles.get(node.id) ?? this.cycle}s`, values: { green: st.tStage, split: sp[st.phase] } };
     }
     return null;
   }

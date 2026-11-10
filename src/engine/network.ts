@@ -70,7 +70,8 @@ export class Network {
       nd.deg = und.get(nd.id)!.size;
       let maxW = 0;
       for (const l of [...nd.inLinks, ...nd.outLinks]) maxW = Math.max(maxW, this.links[l].width);
-      nd.radius = nd.deg <= 2 ? 1.0 : Math.min(14, Math.max(5, 2 + maxW * 0.6));
+      // junction box: signalised nodes keep room for the stop line, motorbike creep zone and crosswalk outside the crossing paths
+      nd.radius = nd.deg <= 2 ? 1.0 : nd.signal ? Math.min(20, maxW + 3.5) : Math.min(14, Math.max(3.5, 1.2 + maxW * 0.8));
       const names = new Map<string, number>();
       for (const l of [...nd.inLinks]) { const L = this.links[l]; names.set(L.name, Math.max(names.get(L.name) ?? 0, L.rank)); }
       nd.name = [...names.entries()].sort((a, b) => b[1] - a[1]).map(e => e[0].replace(/^(Phố|Đường) /, '')).slice(0, 2).join(' × ');

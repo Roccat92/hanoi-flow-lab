@@ -19,6 +19,7 @@ export interface Edits {
   bans?: string[]; // "inLink_outLink" movements forbidden (turn bans)
   zones?: Record<number, number>; // zone representative node -> demand multiplier
   violations?: number; // multiplier on rule-violation propensity (0 = none)
+  chaos?: number;
 }
 
 export interface SimConfig {
@@ -29,7 +30,13 @@ export interface SimConfig {
   dt: number;
   maxVehicles?: number; // safety cap on active vehicles (spawns wait in entry queues beyond it)
   edits?: Edits;
+  chaos?: number; // 0 orderly .. 1 very chaotic (mức độ hỗn loạn); default 0.6
+  crashes?: CrashCfg;
 }
+/** modelled minor collisions ("va quẹt"): scheduled from a separate seeded stream, identical for every controller */
+export interface CrashCfg { on: boolean; perHour: number; minMin: number; maxMin: number; crowd: boolean }
+export const DEFAULT_CRASH: CrashCfg = { on: true, perHour: 1.0, minMin: 20, maxMin: 40, crowd: true };
+export interface SimEvent { t: number; kind: 'crash' | 'crashEnd' | 'incident' | 'info'; text: string; x?: number; y?: number }
 
 export interface Metrics {
   t: number;

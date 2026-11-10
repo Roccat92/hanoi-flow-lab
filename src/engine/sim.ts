@@ -3,19 +3,28 @@ import { Router, type RouteTable } from './routing';
 import { Rng } from './rng';
 import { SCENARIOS, VTYPES, fullMix, LOCAL_MIX, LOCAL_SHARE, type Scenario } from './scenarios';
 import { makeController, FixedTime, SAFETY, type Controller, type PhaseObs, type SignalState } from './controllers';
-import type { DecisionLog, MapData, Metrics, SimConfig, VType } from './types';
+import { DEFAULT_CRASH, type CrashCfg, type DecisionLog, type MapData, type Metrics, type SimConfig, type SimEvent, type VType } from './types';
 
 export class Veh {
   id = 0; type: VType = 0; len = 0; w = 0; a = 0; b = 0; T = 0; s0 = 0; v0f = 1; pcu = 1;
   link = -1; mv = -1; s = 0; v = 0; acc = 0; lat = 0; latT = 0; latFrac = 0.5;
   dest = -1; next = -1; tCreate = 0; tEnter = 0; ff = 0; stops = 0; stopped = false; stopT = 0; waitTotal = 0;
   committed = false; resMv = -1; lcT = 0; obstacle = false; lim = Infinity; dist = 0;
+  frozen = -1; // id of the modelled fender-bender this vehicle is stuck in
   tw = false; cls = 1; vcap = 99; local = false; dwellUntil = -1; servedStop = -1; rude = 0; violated = false;
   gx0 = 0; gy0 = 0; gh0 = 0; gx3 = 0; gy3 = 0; gh3 = 0; // movement geometry
 }
 
 interface Source { link: number; rate: number; nextT: number; queue: Veh[]; west: boolean; local: boolean; zone: number }
 export interface Zone { node: number; w: number; src: number; sink: number }
+export interface Walker { u: number; sp: number; dir: number; t0: number; walking: boolean; c: number }
+/** a zebra crossing over link `link` (and its opposite-direction twin) at s = sL (sT on the twin) */
+export interface Zebra {
+  id: number; link: number; twin: number; sL: number; sT: number; node: number; phases: number[]; len: number;
+  ax: number; ay: number; bx: number; by: number; walkers: Walker[]; blocks: number[]; osm: boolean;
+}
+export interface Crash { id: number; link: number; a: Veh; b: Veh; t0: number; t1: number; x: number; y: number; h: number; side: number; crowd: number; name: string }
+export interface BusStop { link: number; s: number; name: string; id: number }
 const ZONE = 14;
 const MAXLEN = 18; // longest body (incident obstacle); used to bound leader scans // metres at link entry used for spill-back (don't block the box) checks
 const tmp = { x: 0, y: 0, h: 0 };
@@ -26,28 +35,35 @@ export class Simulation {
   linkV: Veh[][]; mvV: Veh[][];
   tailOcc: Float64Array; linkSpeed: Float64Array; linkPcu: Float64Array;
   sinks!: number[]; sinkW!: number[]; tables = new Map<number, RouteTable>(); ffTables = new Map<number, RouteTable>();
+  zebras: Zebra[] = []; zebraBlock: Int32Array; zebrasOnLink = new Map<number, Zebra[]>(); stopsOnLink = new Map<number, BusStop[]>(); busStops: BusStop[] = [];
+  pedCrossed = 0; pedConflicts = 0; busDwellSum = 0; busDwells = 0;
   zones: Zone[] = []; zoneW: number[] = []; parkEnd: Uint8Array; localTrips = 0; violations = 0;
   private costs: Float64Array[] = []; private ffCosts: Float64Array[] = [];
   sources: Source[] = []; sig = new Map<number, SignalState>(); pedMin = new Map<number, number[]>();
-  moveOf = new Map<number, number>(); goCache: Int32Array; goStamp: Int32Array; resv: Int32Array;
+  moveOf = new Map<number, number>(); gapCache: Float64Array; goCache: Int32Array; goStamp: Int32Array; resv: Int32Array;
   log: DecisionLog[] = []; series: Metrics[] = [];
   done: { tt: number; delay: number; stops: number; t: number }[] = [];
   spawned = 0; completed = 0; sumDelay = 0; sumTT = 0; sumStops = 0; co2g = 0; pedWaitSum = 0; pedServed = 0;
   incidentLink = -1; incidentObs: Veh | null = null; eventNode = -1; eventLinks: number[] = [];
-  safetyViolations = 0; checkSafety = false; maxDisp = 0;
+  crashes: Crash[] = []; crashCfg: CrashCfg; events: SimEvent[] = []; private crashRng: Rng; private nextCrashT = Infinity; private crashLink = -1; private crashSeq = 0; private crashPlanT = 0;
+  safetyViolations = 0; checkSafety = false; maxDisp = 0; chaos = 0.6;
   private lastObs = new Map<number, PhaseObs[]>();
 
   constructor(data: MapData, public cfg: SimConfig) {
+    this.crashCfg = { ...DEFAULT_CRASH, ...(cfg.crashes ?? {}) };
+    // separate stream: crash times/places do not depend on the controller or on traffic
+    this.crashRng = new Rng((cfg.seed * 7919 + 17) >>> 0);
     this.net = new Network(data, cfg.edits ?? {}); this.router = new Router(this.net); this.rng = new Rng(cfg.seed);
-    this.sc = SCENARIOS[cfg.scenario]; this.mix = fullMix(this.sc.mix); this.ctrl = makeController(cfg.controller);
+    this.sc = SCENARIOS[cfg.scenario]; this.mix = fullMix(this.sc.mix); this.chaos = Math.max(0, Math.min(1, cfg.chaos ?? cfg.edits?.chaos ?? 0.6)); this.ctrl = makeController(cfg.controller);
     const nL = this.net.links.length, nM = this.net.moves.length;
     this.linkV = Array.from({ length: nL }, () => []); this.mvV = Array.from({ length: nM }, () => []);
     this.tailOcc = new Float64Array(nL); this.linkSpeed = new Float64Array(nL); this.linkPcu = new Float64Array(nL);
     this.parkEnd = new Uint8Array(nL);
+    this.zebraBlock = new Int32Array(nM); this.gapCache = new Float64Array(nM);
     this.goCache = new Int32Array(nM); this.goStamp = new Int32Array(nM).fill(-1); this.resv = new Int32Array(nM);
     for (const m of this.net.moves) this.moveOf.set(m.inL * 65536 + m.outL, m.id);
     for (const L of this.net.links) this.linkSpeed[L.id] = L.vmax;
-    this.setupEvent(); this.setupZones(); this.setupSinks(); this.setupSignals(); this.setupSources(); this.setupIncident();
+    this.setupEvent(); this.setupZones(); this.setupSinks(); this.setupSignals(); this.setupZebras(); this.setupBusStops(); this.setupSources(); this.setupIncident(); this.scheduleCrash();
   }
 
   // ---------------------------------------------------------------- setup
@@ -141,9 +157,120 @@ export class Simulation {
       this.sig.set(n.id, { phase: 0, stage: 'G', tStage: 0, next: 0, lastEnd: n.phases.map(() => 0), minGreen: SAFETY.MIN_GREEN, pedQ: n.phases.map(() => []), switches: 0, lastReason: '', lastDecisionT: 0, forced: 0 });
       if (this.ctrl instanceof FixedTime) {
         const w = n.phases.map(p => p.pedOnly ? 0.2 : p.inLinks.reduce((a, l) => a + this.net.links[l].lanes * this.net.links[l].rank, 0));
-        this.ctrl.setSplits(n, w, pm);
+        const ne = this.cfg.edits?.nodes?.[n.id];
+        if (ne?.splits?.length) this.ctrl.setExact(n, ne.splits, pm);
+        else this.ctrl.setSplits(n, w, pm, ne?.cycle ?? 90);
+        if (ne?.offset) this.sig.get(n.id)!.tStage = -Math.abs(ne.offset); // green-wave offset: delays the first switch
       }
     }
+  }
+  private setupZebras() {
+    const tmp2 = { x: 0, y: 0, h: 0 };
+    const add = (L: Link, sL: number, node: number, phases: number[], osm: boolean) => {
+      const T = L.twin >= 0 && !this.net.links[L.twin].closed ? this.net.links[L.twin] : null;
+      const lo = T ? -(T.width + 0.3) - 1.2 : -L.width / 2 - 1.2, hi = T ? L.width + 0.3 + 1.2 : L.width / 2 + 1.2;
+      this.net.pointAt(L, sL, lo, tmp2); const ax = tmp2.x, ay = tmp2.y;
+      this.net.pointAt(L, sL, hi, tmp2);
+      const z: Zebra = { id: this.zebras.length, link: L.id, twin: T ? T.id : -1, sL, sT: T ? T.len - sL : -1, node, phases, len: hi - lo, ax, ay, bx: tmp2.x, by: tmp2.y, walkers: [], blocks: [], osm };
+      if (node >= 0) z.blocks = [...L.outMoves, ...(T ? T.inMoves : [])];
+      this.zebras.push(z);
+      for (const l of [L.id, z.twin]) if (l >= 0) { const a = this.zebrasOnLink.get(l) ?? []; a.push(z); this.zebrasOnLink.set(l, a); }
+      return z;
+    };
+    // at signalised junctions: one zebra per approach, just past the stop line; served by phases in which that approach is red
+    const done = new Set<number>();
+    for (const [nid] of this.sig) {
+      const n = this.net.nodes[nid];
+      for (const li of n.inLinks) {
+        const L = this.net.links[li]; if (L.closed || !L.outMoves.length || L.alley) continue;
+        const ph = n.phases.map((p, i) => (p.pedOnly || !p.inLinks.includes(li)) ? i : -1).filter(i => i >= 0);
+        if (!ph.length) continue;
+        add(L, Math.min(L.len - 0.3, L.stopS + 2.0), nid, ph, false); done.add(li); if (L.twin >= 0) done.add(L.twin);
+      }
+    }
+    // mid-block / unsignalised zebras mapped in OSM (highway=crossing): pedestrians wait for a gap, vehicles then yield
+    for (const c of this.net.data.crossings ?? []) {
+      const L = this.net.links[c.link]; if (!L || L.closed || done.has(L.id)) continue;
+      // only crossings with room for approaching traffic to stop (>= 40 m from the upstream junction, both directions)
+      if (c.s < L.startS + 40 || c.s > L.stopS - 5) continue;
+      if (L.twin >= 0) { const T = this.net.links[L.twin]; const sT = T.len - c.s; if (sT < T.startS + 40 || sT > T.stopS - 5) continue; }
+      const near = (this.zebrasOnLink.get(L.id) ?? []).some(z => Math.abs((z.link === L.id ? z.sL : z.sT) - c.s) < 15);
+      if (near) continue;
+      add(L, c.s, -1, [], true);
+    }
+  }
+  private setupBusStops() {
+    for (const b of this.net.data.busStops ?? []) {
+      const L = this.net.links[b.link]; if (!L || L.closed || b.s > L.stopS - 6) continue;
+      const st: BusStop = { link: b.link, s: b.s, name: b.name, id: this.busStops.length };
+      this.busStops.push(st); const a = this.stopsOnLink.get(b.link) ?? []; a.push(st); a.sort((x, y) => x.s - y.s); this.stopsOnLink.set(b.link, a);
+    }
+  }
+  /** pedestrians: arrivals, waiting for a safe start, walking; zebras block the vehicle movements they cross */
+  private updatePeds(dt: number) {
+    const pr = this.sc.pedRate / 3600;
+    for (const z of this.zebras) {
+      const st = z.node >= 0 ? this.sig.get(z.node)! : null;
+      if (this.rng.next() < (z.osm ? pr * 0.5 : pr) * dt) {
+        const w: Walker = { u: 0, sp: this.rng.range(1.0, 1.5), dir: this.rng.next() < 0.5 ? 1 : -1, t0: this.t, walking: false, c: Math.floor(this.rng.next() * 6) };
+        z.walkers.push(w);
+        if (st) { const p = z.phases[0]; st.pedQ[p].push(this.t); (w as any).q = p; }
+      }
+      let anyWalking = false;
+      for (let i = z.walkers.length - 1; i >= 0; i--) {
+        const w = z.walkers[i];
+        if (w.walking) {
+          w.u += w.sp * dt / z.len;
+          if (w.u >= 1) { z.walkers.splice(i, 1); this.pedCrossed++; continue; }
+          anyWalking = true;
+        }
+      }
+      const waiting = z.walkers.some(w => !w.walking);
+      if (waiting) {
+        let may: boolean;
+        if (st) {
+          // walk only during a serving green, with enough guaranteed green left to finish crossing
+          const need = z.len / 1.0;
+          may = st.stage === 'G' && z.phases.includes(st.phase) && st.tStage + need <= Math.max(st.minGreen, (this.ctrl instanceof FixedTime ? (this.ctrl.getSplits(z.node)?.[st.phase] ?? 0) : 0)) + 2 && this.zebraClear(z);
+        } else may = this.zebraGap(z);
+        if (may) for (const w of z.walkers) if (!w.walking) { w.walking = true; this.pedWaitSum += this.t - w.t0; this.pedServed++; anyWalking = true; }
+      }
+      const was = (z as any).active === true;
+      if (anyWalking !== was) {
+        (z as any).active = anyWalking;
+        for (const mi of z.blocks) { this.zebraBlock[mi] += anyWalking ? 1 : -1; this.goStamp[mi] = -1; }
+      }
+    }
+  }
+  /** signalised zebra may start: nothing occupies or has reserved the movements it crosses, and the strip is empty */
+  private zebraClear(z: Zebra) {
+    for (const mi of z.blocks) if (this.mvV[mi].length || this.resv[mi]) return false;
+    return this.stripEmpty(z.link, z.sL, 1.0) && (z.twin < 0 || this.stripEmpty(z.twin, z.sT, 1.0));
+  }
+  private stripEmpty(l: number, sz: number, h: number) {
+    for (const v of this.linkV[l]) if (v.s > sz - h && v.s - v.len < sz + h) return false;
+    return true;
+  }
+  /** unsignalised zebra: a gap in which every approaching vehicle can stop comfortably */
+  private zebraGap(z: Zebra) {
+    for (const [l, sz] of [[z.link, z.sL], [z.twin, z.sT]]) {
+      if (l < 0) continue;
+      for (const mi of this.net.links[l].inMoves) if (this.mvV[mi].length) return false;
+      for (const v of this.linkV[l]) {
+        if (v.s - v.len > sz + 1.5) continue; // already past
+        if (v.s > sz - 2.5) return false; // on the strip
+        if (sz - 2.5 - v.s < (v.v * v.v) / (2 * 3.0) + 2) return false; // cannot stop comfortably
+      }
+    }
+    return true;
+  }
+  /** how far two-wheelers creep past the stop line at red (stops short of the signal crosswalk) */
+  creepOf(L: Link) { return Math.max(0, Math.min(0.9 * this.chaos, L.len - L.stopS - 3.2)); }
+  private zebraAhead(L: Link, s: number) { // nearest active unsignalised zebra ahead on this link
+    const zs = this.zebrasOnLink.get(L.id); if (!zs) return Infinity;
+    let best = Infinity;
+    for (const z of zs) { if (z.node >= 0 || !(z as any).active) continue; const sz = z.link === L.id ? z.sL : z.sT; if (sz - 2.5 >= s - 0.01 && sz < best) best = sz; }
+    return best;
   }
   private setupSources() {
     const bias = this.sc.inboundBias;
@@ -161,6 +288,58 @@ export class Simulation {
       this.sources.push({ link: z.src, rate, nextT: this.rng.exp(rate), queue: [], west: this.net.nodes[z.node].x <= 0, local: true, zone: i });
     });
   }
+  private scheduleCrash() {
+    const c = this.crashCfg; if (!c.on || c.perHour <= 0) { this.nextCrashT = Infinity; return; }
+    this.crashPlanT += this.crashRng.exp(c.perHour / 3600); this.nextCrashT = this.crashPlanT; // planned times: independent of when the previous crash happened
+    const cand = this.net.links.filter(L => !L.alley && !L.closed && L.stopS - L.startS > 40);
+    this.crashLink = cand.length ? this.crashRng.pick(cand.map(L => L.id), cand.map(L => L.len * L.rank)) : -1;
+    (this as any).crashDur = this.crashRng.range(c.minMin, c.maxMin) * 60;
+    (this as any).crashCrowd = c.crowd ? 2 + Math.floor(this.crashRng.next() * 5) : 0;
+  }
+  /** at the scheduled time, the first suitable pair of close vehicles on (or nearest to) the drawn link collide lightly */
+  private crashUpdate() {
+    for (let i = this.crashes.length - 1; i >= 0; i--) {
+      const k = this.crashes[i];
+      if (this.t >= k.t1) {
+        k.a.frozen = -1; k.b.frozen = -1; this.crashes.splice(i, 1);
+        this.events.push({ t: this.t, kind: 'crashEnd', text: `Hai xe va quẹt tại ${k.name} đã thỏa thuận xong, tiếp tục hành trình (đứng ${Math.round((k.t1 - k.t0) / 60)} phút)`, x: k.x, y: k.y });
+      }
+    }
+    if (this.t < this.nextCrashT || this.crashLink < 0) return;
+    if (this.t > this.nextCrashT + 300) { this.events.push({ t: this.t, kind: 'info', text: 'Lượt va quẹt dự kiến bị bỏ qua: không có hai xe đủ gần trên đoạn đường đã chọn' }); this.scheduleCrash(); return; }
+    // search the drawn link first, then links sharing its name
+    const L0 = this.net.links[this.crashLink];
+    const mid = L0.pts[Math.floor(L0.pts.length / 2)];
+    const near = this.net.links.filter(L => L.id !== L0.id && !L.alley && !L.closed && Math.hypot(L.pts[0][0] - mid[0], L.pts[0][1] - mid[1]) < 400);
+    near.sort((a, b) => Math.hypot(a.pts[0][0] - mid[0], a.pts[0][1] - mid[1]) - Math.hypot(b.pts[0][0] - mid[0], b.pts[0][1] - mid[1]) || a.id - b.id);
+    const links = [L0, ...near];
+    for (const L of links) {
+      const list = this.linkV[L.id];
+      for (let i = 1; i < list.length; i++) {
+        const b = list[i]; if (b.obstacle || b.frozen >= 0 || b.v > 10 || b.type === 2) continue;
+        for (let j = i - 1; j >= 0 && j >= i - 6; j--) {
+          const a = list[j]; if (a.obstacle || a.frozen >= 0 || a.type === 2) continue;
+          const gap = a.s - a.len - b.s;
+          if (gap < 0 || gap > 3.5 || !overlapLat(a, b.lat, b.w, 0.4)) continue;
+          if (a.s > L.stopS - 12 || b.s - b.len < L.startS + 3) continue;
+          // ok: a light touch between a (hit from behind / side-swiped) and b
+          const dur = (this as any).crashDur as number;
+          if (a.committed) this.release(a); if (b.committed) this.release(b);
+          const id = ++this.crashSeq; a.frozen = id; b.frozen = id; a.v = b.v = 0; a.acc = b.acc = 0;
+          const p = { x: 0, y: 0, h: 0 }; this.net.pointAt(L, a.s - a.len, this.net.offsetOf(L, a.lat), p);
+          const crowd = (this as any).crashCrowd as number;
+          const side = a.lat > L.width / 2 ? 1 : -1;
+          const k: Crash = { id, link: L.id, a, b, t0: this.t, t1: this.t + dur, x: p.x, y: p.y, h: p.h, side, crowd, name: L.name };
+          this.crashes.push(k);
+          const nm = (v: Veh) => VTYPES[v.type].name.toLowerCase();
+          this.events.push({ t: this.t, kind: 'crash', text: `Va quẹt tại ${L.name}: ${nm(b)} chạm ${nm(a)}, 2 xe đứng lại cãi nhau${crowd ? `, ${crowd} người xúm vào xem` : ''} (dự kiến ~${Math.round(dur / 60)} phút)`, x: p.x, y: p.y });
+          if (this.events.length > 500) this.events.splice(0, 100);
+          this.scheduleCrash();
+          return;
+        }
+      }
+    }
+  }
   private setupIncident() {
     if (!this.sc.incident) return;
     let best = -1, bl = 0;
@@ -177,6 +356,7 @@ export class Simulation {
     const p = VTYPES[type]; const v = new Veh(); const sc = this.sc; const r = this.rng;
     v.id = this.nextId++; v.type = type; v.len = p.len; v.w = p.w; v.a = p.a * sc.accelFactor * r.range(0.85, 1.15);
     v.b = p.b; v.T = p.T * sc.headwayFactor * r.range(0.85, 1.2); v.s0 = p.s0; v.v0f = p.vf * sc.speedFactor * r.range(0.88, 1.1); v.pcu = p.pcu;
+    if (p.tw) { v.T *= 1 - 0.35 * this.chaos; v.s0 *= 1 - 0.4 * this.chaos; }
     v.tw = p.tw; v.cls = p.tw ? 0 : p.heavy ? 2 : 1; v.vcap = p.vcap * (type === 4 ? r.range(0.8, 1.15) : 1); v.local = zone >= 0;
     // propensity to break rules (two-wheelers, taxis); scaled by the editor setting
     const vm = this.cfg.edits?.violations ?? 1;
@@ -267,17 +447,13 @@ export class Simulation {
     for (const [nid, st] of this.sig) {
       const n = this.net.nodes[nid];
       st.tStage += dt;
-      // pedestrians
-      const pr = this.sc.pedRate / 3600;
-      for (let p = 0; p < n.phases.length; p++) if (this.rng.next() < pr * dt) st.pedQ[p].push(this.t);
       if (st.stage === 'Y' && st.tStage >= SAFETY.YELLOW) { st.stage = 'R'; st.tStage = 0; }
       else if (st.stage === 'R' && st.tStage >= SAFETY.ALL_RED) {
         st.lastEnd[st.phase] = this.t; st.phase = st.next; st.stage = 'G'; st.tStage = 0; st.switches++;
         const q = st.pedQ[st.phase];
         const pm = this.pedMin.get(nid)![st.phase];
         st.minGreen = Math.max(SAFETY.MIN_GREEN, q.length ? pm : 0, n.phases[st.phase].pedOnly ? pm : 0);
-        for (const a of q) { this.pedWaitSum += this.t - a; this.pedServed++; }
-        q.length = 0;
+        q.length = 0; // waiting pedestrians step off once their zebra is clear (updatePeds)
       } else if (st.stage === 'G' && tick && st.tStage >= st.minGreen) {
         const obs = this.observe(n, st); this.lastObs.set(nid, obs);
         let d = this.ctrl.decide(n, st, obs, this.t);
@@ -311,7 +487,7 @@ export class Simulation {
         for (const v of this.linkV[li]) {
           if (v.obstacle) continue;
           const d = L.stopS - v.s;
-          if (d > 150 || d < -1) continue;
+          if (d > 150 || d < -2) continue;
           const w = v.type === 2 ? 3 : v.pcu; // bus priority weight
           if (v.v < 1.5) {
             o.queuePcu += w; o.queueN++; o.maxWait = Math.max(o.maxWait, v.stopT);
@@ -341,11 +517,17 @@ export class Simulation {
   private canGo(mi: number, v: Veh): boolean {
     const m = this.net.moves[mi]; const col = this.sigColor(mi);
     if (col === 'R' || col === 'Y') return false;
+    if (this.zebraBlock[mi]) return false; // pedestrians on the crosswalk
     if (this.goStamp[mi] !== this.step_) {
       this.goStamp[mi] = this.step_;
-      this.goCache[mi] = this.boxClear(m) && this.yieldOk(m, col) ? 1 : 0;
+      const box = this.boxClear(m);
+      this.gapCache[mi] = box ? this.yieldGap(m, col, false) : -1;
+      this.goCache[mi] = box ? 1 : 0;
     }
-    if (!this.goCache[mi]) {
+    // gap acceptance: permissive left turns (motorbikes accept ~2.5 s, cars 4.5 s), ngõ exits 4 s, else 3 s
+    const agg = v.tw ? 1 - 0.35 * this.chaos : v.type === 5 ? 1 - 0.15 * this.chaos : 1; // honk-and-go gap acceptance
+    const need = (m.turn === 'L' && col === 'g' ? (v.tw ? 2.5 : 4.5) : this.net.links[m.inL].alley ? 4.0 : 3.0) * agg;
+    if (!(this.goCache[mi] && this.gapCache[mi] >= need)) {
       // deadlock breaker at uncontrolled/permissive conflicts: after 25 s waiting, only the box rule applies
       if (!(v.stopT > 25 && col !== 'G' && this.boxClear(m))) return false;
     }
@@ -375,12 +557,14 @@ export class Simulation {
     for (const c of this.net.moves[mi].conflicts) { this.goStamp[c] = this.step_; this.goCache[c] = 0; }
   }
   release(v: Veh) { if (v.resMv >= 0) { this.resv[v.resMv]--; v.resMv = -1; } v.committed = false; }
-  private yieldOk(m: Movement, col: string) {
-    const L = this.net.links[m.inL];
+  /** smallest time gap (s) of a prioritised conflicting vehicle approaching this movement; all=true treats every conflict as prioritised */
+  private yieldGap(m: Movement, col: string, all: boolean) {
+    const L = this.net.links[m.inL]; let gap = Infinity;
     for (const c of m.conflicts) {
       const cm = this.net.moves[c];
       let prior: boolean;
-      if (col === 'g') prior = this.sigColor(c) === 'G';
+      if (all) prior = true;
+      else if (col === 'g') prior = this.sigColor(c) === 'G';
       else if (col === 'N') prior = this.net.links[cm.inL].rank > L.rank;
       else prior = false;
       if (!prior) continue;
@@ -389,10 +573,18 @@ export class Simulation {
         const o = list[i]; if (o.obstacle) continue; k++;
         const d = CL.stopS - o.s; if (d > 60) break;
         if (o.next !== cm.outL) continue;
-        if (d / Math.max(o.v, 0.8) < (L.alley ? 4.0 : 3.0)) return false;
+        if (all && this.sigColor(c) !== 'G' && this.sigColor(c) !== 'g' && o.v < 1) continue; // stopped at their red
+        gap = Math.min(gap, d / Math.max(o.v, 0.8));
       }
     }
-    return true;
+    return gap;
+  }
+  /** a rule breaker may cross on red only when no conflict exists at all: empty box, no reservation, no pedestrian, no approaching prioritised vehicle */
+  private violateOk(mi: number, v: Veh) {
+    const m = this.net.moves[mi];
+    if (this.zebraBlock[mi] || !this.boxClear(m)) return false;
+    if (this.yieldGap(m, 'R', true) < 6) return false;
+    return this.spaceOk(m, v);
   }
 
   // ---------------------------------------------------------------- main step
@@ -400,7 +592,9 @@ export class Simulation {
     const dt = this.cfg.dt; this.step_++;
     for (const s of this.sources) this.trySpawn(s);
     this.incidentUpdate();
+    this.crashUpdate();
     this.updateSignals(dt);
+    this.updatePeds(dt);
     this.computeTails();
     // 1) lateral behaviour (first, so car-following below sees the new lateral positions)
     for (let li = 0; li < this.linkV.length; li++) { const list = this.linkV[li]; const L = this.net.links[li]; for (let i = 0; i < list.length; i++) this.lateral(list, i, L, dt); }
@@ -441,13 +635,13 @@ export class Simulation {
   }
 
   /** vehicle ahead whose lateral span overlaps (lat, w) and whose rear is closest (lists are sorted by front position) */
-  private leaderIn(list: Veh[], i: number, s: number, lat: number, w: number, maxD: number): Veh | null {
+  private leaderIn(list: Veh[], i: number, s: number, lat: number, w: number, maxD: number, margin = 0.2): Veh | null {
     let best: Veh | null = null, bb = Infinity;
     for (let j = i - 1; j >= 0; j--) {
       const o = list[j];
       if (o.s - MAXLEN > bb || o.s - MAXLEN - s > maxD) break;
       const back = o.s - o.len;
-      if (back < bb && back - s <= maxD && overlapLat(o, lat, w, 0.2)) { best = o; bb = back; }
+      if (back < bb && back - s <= maxD && overlapLat(o, lat, w, margin)) { best = o; bb = back; }
     }
     return best;
   }
@@ -463,9 +657,9 @@ export class Simulation {
   }
 
   private accelOnLink(list: Veh[], i: number, L: Link) {
-    const v = list[i]; if (v.obstacle) { v.acc = 0; v.lim = 0; return; }
+    const v = list[i]; if (v.obstacle || v.frozen >= 0) { v.acc = 0; v.lim = 0; v.v = 0; return; }
     const vmax = L.vmax * (this.incidentObs && L.id === this.incidentLink ? 0.6 : 1);
-    const ld = this.leaderIn(list, i, v.s, v.lat, v.w, 80);
+    const ld = this.leaderIn(list, i, v.s, v.lat, v.w, 80, v.tw ? 0.2 - 0.12 * this.chaos : 0.2);
     let gap = Infinity, vl = 0;
     if (ld) { gap = ld.s - ld.len - v.s; vl = ld.v; }
     if (v.next < 0) { // destination link: drive off the end (or park at the end: event venue, ngõ zone)
@@ -476,9 +670,9 @@ export class Simulation {
       const d = L.stopS - v.s;
       if (d < 70) {
         const mi = this.moveFor(v);
-        let go = false;
+        let go = false; let col: string = 'N';
         if (mi >= 0) {
-          const col = this.sigColor(mi);
+          col = this.sigColor(mi);
           const canStop = d > (v.v * v.v) / (2 * 4.0) + 0.5;
           const commitDist = (v.v * v.v) / (2 * 2.5) + 3;
           if (v.committed) {
@@ -488,9 +682,15 @@ export class Simulation {
           } else if (col !== 'Y' && col !== 'R') {
             go = this.canGo(mi, v);
             if (go && d < commitDist) this.reserve(v, mi);
+          } else if (col === 'R' && v.rude > 0 && d < 2.5 && v.v < 1 && v.stopT > 4 && this.rng.next() < 0.01 * v.rude * (0.3 + this.chaos) && this.violateOk(mi, v)) {
+            go = true; this.reserve(v, mi); v.violated = true; this.violations++; // red-light running, only into an empty, conflict-free junction
           }
         }
-        if (!go) { if (d < gap) { gap = d + 0.3; vl = 0; } }
+        // at a red light cars and buses keep behind the line while motorbikes creep up to it (and fill the space in front)
+        const red = col === 'R' || col === 'Y';
+        const back = !go && !v.tw && red ? 1.8 * (1 - 0.5 * this.chaos) : 0;
+        const creep = !go && v.tw && red ? this.creepOf(L) : 0;
+        if (!go) { if (d - back + creep < gap) { gap = Math.max(0, d - back + creep) + 0.3; vl = 0; } }
         else {
           const m = this.net.moves[mi]; const ml = this.mvV[mi];
           const ml2 = this.mapLat(v, m);
@@ -502,6 +702,23 @@ export class Simulation {
             if (ot) { const g2 = d + m.len + ot.s - ot.len - out.startS; if (g2 < gap) { gap = g2; vl = ot.v; } }
           }
         }
+      }
+    }
+    // unsignalised zebra with pedestrians on it
+    const zs = this.zebraAhead(L, v.s);
+    if (zs < Infinity) { const g2 = zs - 2.5 - v.s; if (g2 < gap) { gap = Math.max(0, g2) + 0.05; vl = 0; } }
+    // buses serve stops: pull in, dwell, block the kerb side
+    if (v.type === 2) {
+      const stops = this.stopsOnLink.get(L.id);
+      if (stops) for (const bs of stops) {
+        if (bs.s < v.s - 0.5 || v.servedStop === bs.id + L.id * 1000) continue;
+        const d = bs.s - v.s;
+        if (v.dwellUntil < 0 && d < 1.0 + v.s0 && v.v < 0.4) { v.dwellUntil = this.t + this.rng.range(10, 30); }
+        if (v.dwellUntil >= 0) {
+          if (this.t >= v.dwellUntil) { this.busDwellSum += 0; this.busDwells++; v.servedStop = bs.id + L.id * 1000; v.dwellUntil = -1; }
+          else { gap = 0.05; vl = 0; this.busDwellSum += this.cfg.dt; }
+        } else if (d + v.s0 + 0.3 < gap) { gap = d + v.s0 + 0.3; vl = 0; }
+        break;
       }
     }
     v.acc = this.idm(v, vmax, gap, vl);
@@ -525,14 +742,17 @@ export class Simulation {
 
   /** sublane lateral behaviour: motorbikes filter through gaps, cars change lanes; both pre-position for turns */
   private lateral(list: Veh[], i: number, L: Link, dt: number) {
-    const v = list[i]; if (v.obstacle) return;
+    const v = list[i]; if (v.obstacle || v.frozen >= 0) return;
     const turnLat = this.turnBand(v, L);
     if (v.tw) {
       if ((this.step_ + v.id) % 2 === 0) {
         let best = v.latT, bs = -Infinity;
-        for (const dl of [-1.2, -0.6, 0, 0.6, 1.2]) {
-          const c = clampLat(L, v, v.lat + dl);
-          const ld = this.leaderIn(list, i, v.s, c, v.w, 40);
+        const k = 0.7 + 0.7 * this.chaos, mg = 0.2 - 0.12 * this.chaos;
+        // in jams two-wheelers spill onto the road edge / sidewalk edge (kerb side only)
+        const spill = v.v < 3 ? 0.9 * this.chaos : 0;
+        for (const dl of LAT_CANDS) {
+          const c = Math.min(L.width - v.w / 2 - 0.15 + spill, Math.max(v.w / 2 + 0.15, v.lat + dl * k));
+          const ld = this.leaderIn(list, i, v.s, c, v.w, 40, mg);
           let g = ld ? Math.min(40, ld.s - ld.len - v.s) + (ld.v - v.v) * 0.5 : 40;
           g -= Math.abs(c - v.lat) * 1.5;
           if (turnLat >= 0) g -= Math.abs(c - turnLat) * 1.2;
@@ -552,22 +772,35 @@ export class Simulation {
           if (k < 0 || k >= lanes.length) continue;
           if (this.frontGap(list, i, v, lanes[k]) > gCur + 12) target = k;
         }
+        // chaotic mixed traffic: slow cars nudge sideways into any half-gap between motorbikes
+        if (target === cur && this.chaos > 0 && v.v < 4) {
+          const m0 = v.w / 2 + 0.15;
+          for (const dl of [-0.6, 0.6]) {
+            const c = Math.min(L.width - m0, Math.max(m0, v.lat + dl * this.chaos));
+            if (Math.abs(c - v.lat) > 0.05 && this.frontGap(list, i, v, c) > gCur + 3 && this.lateralSafe(list, i, v, c)) { v.latT = c; break; }
+          }
+          return this.moveLat(list, i, v, dt);
+        }
       }
       if (target !== cur) {
         const step = target > cur ? cur + 1 : cur - 1;
         if (this.lateralSafe(list, i, v, lanes[step])) v.latT = lanes[step];
       }
     }
-    // move toward target at limited lateral speed, re-checking side clearance
+    this.moveLat(list, i, v, dt);
+  }
+  /** move toward the lateral target at limited lateral speed, re-checking side clearance */
+  private moveLat(list: Veh[], i: number, v: Veh, dt: number) {
     const dl = v.latT - v.lat;
     if (Math.abs(dl) > 0.01) {
-      const vlat = v.type === 0 ? 1.2 : v.type === 4 ? 0.6 : 0.8;
+      const vlat = v.type === 0 ? 1.2 + 1.0 * this.chaos : v.type === 4 ? 0.6 : 0.5 + 0.4 * this.chaos;
       const nl = v.lat + Math.sign(dl) * Math.min(Math.abs(dl), vlat * dt);
       if (this.lateralSafe(list, i, v, nl)) v.lat = nl; else v.latT = v.lat;
     }
   }
   private frontGap(list: Veh[], i: number, v: Veh, lat: number) { const ld = this.leaderIn(list, i, v.s, lat, v.w, 60); return ld ? ld.s - ld.len - v.s : 60; }
   private turnBand(v: Veh, L: Link) {
+    if (v.type === 2) { const st = this.stopsOnLink.get(L.id); if (st && st.some(b => b.s > v.s && b.s - v.s < 80 && v.servedStop !== b.id + L.id * 1000)) return L.width - v.w / 2 - 0.3; }
     if (v.next < 0 || L.stopS - v.s > 70) return -1;
     const mi = this.moveFor(v); if (mi < 0) return -1;
     const t = this.net.moves[mi].turn;
@@ -604,7 +837,7 @@ export class Simulation {
           if (v.s >= endS - 0.6) exits.push(v);
         } else if (v.s >= L.stopS && v.committed) {
           const mi = this.moveFor(v); if (mi >= 0) transfersMv.push([v, mi]);
-        } else if (v.s > L.stopS) { v.s = L.stopS; v.v = 0; }
+        } else if (v.s > L.stopS + (v.tw ? this.creepOf(L) : 0)) { v.s = L.stopS + (v.tw ? this.creepOf(L) : 0); v.v = 0; }
       }
     }
     for (let mi = 0; mi < this.mvV.length; mi++) {
@@ -617,7 +850,7 @@ export class Simulation {
       const over = v.s - L.stopS;
       // two vehicles released in the same step may map onto the same exit band: the later one waits at the line
       const olat = this.mapLat(v, m);
-      if (this.mvV[mi].some(o => Math.abs(o.lat - olat) < (o.w + v.w) / 2 + 0.05 && o.s - o.len < over + 0.1)) { v.s = L.stopS; v.v = Math.min(v.v, 1); continue; }
+      if (this.mvV[mi].some(o => Math.abs(o.lat - olat) < (o.w + v.w) / 2 + 0.05 && o.s - o.len < over + 0.1)) { v.v = 0; continue; } // wait at the line (never moved backwards)
       removeFrom(this.linkV[v.link], v);
       v.latFrac = Math.min(0.95, Math.max(0.05, v.lat / L.width));
       this.net.pointAt(L, L.stopS, this.net.offsetOf(L, v.lat), tmp); v.gx0 = tmp.x; v.gy0 = tmp.y; v.gh0 = tmp.h;
@@ -699,13 +932,22 @@ export class Simulation {
       avgDelayS: this.completed ? this.sumDelay / this.completed : 0, avgTravelS: this.completed ? this.sumTT / this.completed : 0,
       avgStops: this.completed ? this.sumStops / this.completed : 0, pcuQueued: pcuQ, longStopped: longS,
       co2kgH: this.t > 0 ? this.co2g / 1000 / (this.t / 3600) : 0, pedWaitS: this.pedServed ? this.pedWaitSum / this.pedServed : 0, maxQueue: maxQ,
-      violations: this.violations, localTrips: this.localTrips,
+      violations: this.violations, localTrips: this.localTrips, pedCrossed: this.pedCrossed, busDwellS: this.busDwells ? this.busDwellSum / this.busDwells : 0,
       ...(recent.length ? { recentDelayS: rd / recent.length, recentTravelS: rt / recent.length, recentStops: rs / recent.length } : {}),
     } as Metrics;
   }
 
   /** debug invariant checks used by tests */
   verifySafety() {
+    for (const z of this.zebras) {
+      if (!z.walkers.some(w => w.walking)) continue;
+      if (!this.stripEmpty(z.link, z.sL, 0.6) || (z.twin >= 0 && !this.stripEmpty(z.twin, z.sT, 0.6))) this.pedConflicts++;
+      for (const mi of z.blocks) if (this.mvV[mi].length) {
+        // a vehicle inside a blocked movement is only a conflict if it actually overlaps the crosswalk position
+        const m = this.net.moves[mi];
+        for (const o of this.mvV[mi]) { const atStart = z.link === m.inL ? o.s - o.len < 1.8 : o.s > m.len - 1.8; if (atStart) { this.pedConflicts++; break; } }
+      }
+    }
     for (const [nid, st] of this.sig) {
       const n = this.net.nodes[nid];
       const greens = n.moves.filter(m => { const c = this.sigColor(m); return c === 'G' || c === 'g'; });
@@ -733,6 +975,7 @@ export class Simulation {
 
 // ---------------------------------------------------------------- helpers
 const MIXIDX = [0, 1, 2, 3, 4, 5, 6, 7];
+const LAT_CANDS = [-1.6, -0.9, -0.4, 0, 0.4, 0.9, 1.6];
 function overlapLat(o: Veh, lat: number, w: number, margin: number) { return Math.abs(o.lat - lat) < (o.w + w) / 2 + margin; }
 function sweepOverlap(o: Veh, lo: number, hi: number, w: number) { return o.lat + o.w / 2 + 0.15 > lo - w / 2 && o.lat - o.w / 2 - 0.15 < hi + w / 2; }
 function clampLat(L: Link, v: Veh, lat: number) { const m = v.w / 2 + 0.15; return Math.min(L.width - m, Math.max(m, lat)); }
