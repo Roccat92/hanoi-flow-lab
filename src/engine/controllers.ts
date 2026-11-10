@@ -10,6 +10,8 @@ export interface PhaseObs {
   outQueuePcu: number;  // queued pcu on those exits (downstream queue, max-pressure "minus" term)
   satPcuS: number;      // saturation flow of the phase (pcu/s), from approach lanes
   platoonEta: number;   // seconds until the next platoon released by an upstream signal reaches the stop line
+  busEta?: number;      // TSP: seconds until the next line bus (not about to stop at a kerb stop) reaches the stop line
+  busPax?: number;      // TSP: passengers on those buses
 }
 export interface SignalState {
   phase: number; stage: 'G' | 'Y' | 'R'; tStage: number; next: number; lastEnd: number[];
@@ -81,6 +83,7 @@ export class Actuated implements Controller {
 export class AiCoordinated implements Controller {
   kind: ControllerKind = 'ai'; label = 'AI điều phối (max-pressure mạng lưới + dự báo)';
   // tuned on seed 4 only (morning + evening); reported comparisons use seeds 1-3
+  tsp = false; tspExt = 15;
   H = 12; maxG = 90; gap = 2.5; lost = SAFETY.YELLOW + SAFETY.ALL_RED; kCost = 2.5; minEff = 0;
   served(o: PhaseObs) {
     const want = o.queuePcu + 0.7 * o.arrPcu + 0.5 * o.upArrPcu;
@@ -114,6 +117,8 @@ export class AiCoordinated implements Controller {
     };
     if (c.outFreePcu < 1 && c.queuePcu > 0 && b.outFreePcu > 2)
       return { switchTo: best, text: `Đường ra của pha hiện tại hết chỗ (còn ${fmt(Math.max(0, c.outFreePcu))} PCU, tràn ngược): xanh tiếp chỉ làm chẹn nút, chuyển sang ${name(best)}: ${why()}`, values: vals };
+    // transit signal priority: extend the green (up to maxG + tspExt) for a bus about to reach the line
+    if (this.tsp && (c.busEta ?? 99) < 10 && st.tStage < this.maxG + this.tspExt && b.maxWait < 120 && c.outFreePcu > 3) return null;
     // green wave: a platoon from the upstream signal arrives within a few seconds and the exit can take it
     const platoonSoon = c.platoonEta < 6 && c.upArrPcu > 1 && c.outFreePcu > c.upArrPcu && st.tStage < this.maxG - 6 && b.maxWait < 90;
     if (c.queueN === 0 && c.gapS > this.gap && !platoonSoon)

@@ -306,3 +306,75 @@ describe('signal-free and hybrid control modes', () => {
     }
   });
 });
+
+describe('buses on fixed lines and trucks', () => {
+  const overlaps = (sim: Simulation) => {
+    let n = 0;
+    for (const list of sim.linkV) for (let a = 0; a < list.length; a++) for (let b = a + 1; b < list.length && b < a + 40; b++) {
+      const A = list[a], B = list[b]; if (Math.abs(A.lat - B.lat) < (A.w + B.w) / 2 - 0.05 && A.s - A.len < B.s - 0.05) n++;
+    }
+    return n;
+  };
+  it('real OSM lines run; buses swerve to the kerb, stop in lane when it is taken and merge back without any overlap', () => {
+    const sim = new Simulation(data, { seed: 3, controller: 'ai', scenario: 'morning', demandScale: 1, dt: 0.5 });
+    sim.checkSafety = true;
+    let ov = 0, kerbStops = 0, sawSwerve = 0;
+    for (let i = 0; i < 2400; i++) {
+      sim.step();
+      for (const list of sim.linkV) for (const v of list) if (v.line >= 0 && v.kerbMode > 0 && Math.abs(v.latT - v.lat) < 0.01 && v.dwellUntil < 0 && v.kerbS - v.s < 60 && v.lat > sim.net.links[v.link].width - v.w / 2 - 0.3) sawSwerve++;
+      if (i % 5 === 0) ov += overlaps(sim);
+      for (const list of sim.linkV) for (const v of list) if (v.dwellUntil >= 0 && v.line >= 0 && !v.inLane) kerbStops++;
+    }
+    expect(sim.lines.length).toBeGreaterThan(30);
+    expect(sim.lines.every(l => l.path.every((li, k) => k === 0 || sim.moveOf.has(l.path[k - 1] * 65536 + li)))).toBe(true);
+    expect(ov).toBe(0);
+    expect(sim.safetyViolations).toBe(0);
+    expect(sim.busRuns).toBeGreaterThan(50);
+    expect(sim.busBoarded).toBeGreaterThan(200);
+    expect(kerbStops).toBeGreaterThan(0);
+    expect(sawSwerve).toBeGreaterThan(0);
+    expect(sim.busInLane).toBeGreaterThan(0);
+    expect(sim.busHail).toBeGreaterThan(0);
+    expect(sim.truckUnloads).toBeGreaterThan(0);
+    // generic buses are replaced by line buses
+    for (const list of sim.linkV) for (const v of list) if (v.type === 2) expect(v.line).toBeGreaterThanOrEqual(0);
+  });
+  it('bus timetable, passengers and dwell times are identical for the same seed and do not depend on the controller', () => {
+    const go = (c: ControllerKind, seed: number) => {
+      const sim = new Simulation(data, { seed, controller: c, scenario: 'evening', demandScale: 1, dt: 0.5 });
+      const dw: number[] = []; const orig = (sim as any).startDwell.bind(sim);
+      (sim as any).startDwell = (v: any, L: any) => { orig(v, L); if (v.line >= 0 && dw.length < 30) dw.push(Math.round((v.dwellUntil - sim.t) * 1000)); };
+      for (let i = 0; i < 1200; i++) sim.step();
+      return { dw, runs: sim.lines.map(l => l.runs).join(','), wait: sim.stopPts.map(s => s.nextArr.join(',')).join(';') };
+    };
+    const a = go('ai', 7), b = go('ai', 7), c = go('fixed', 7), d = go('ai', 8);
+    expect(a.dw.length).toBeGreaterThan(5);
+    expect(a.dw).toEqual(b.dw);
+    expect(a.runs).toBe(c.runs);         // departures are timetable-driven
+    expect(a.wait).toBe(c.wait);         // passenger arrivals come from the bus stream only
+    expect(a.wait).not.toBe(d.wait);
+  });
+  it('trucks: kinds with cargo, never in alleys, peak ban keeps heavy and construction trucks out, unloading blocks the lane for minutes', () => {
+    const sim = new Simulation(data, { seed: 2, controller: 'fixed', scenario: 'morning', demandScale: 1, dt: 0.5, trucks: { peakBan: true, unloadP: 0.3, unloadMin: [2, 4], wideTurns: true } });
+    let alley = 0, banned = 0, longest = 0; const kinds = new Set<number>();
+    for (let i = 0; i < 2400; i++) {
+      sim.step();
+      if (i % 10) continue;
+      for (const L of sim.net.links) for (const v of sim.linkV[L.id]) if (v.type === 3) {
+        kinds.add(v.kind); expect(v.cargo.length).toBeGreaterThan(0);
+        if (L.alley) alley++; if (v.kind === 1 || v.kind === 2) banned++;
+        if (v.kerbMode === 3 && v.dwellUntil >= 0) longest = Math.max(longest, sim.t - v.dwellT0);
+      }
+    }
+    expect(alley).toBe(0);
+    expect(banned).toBe(0);
+    expect(sim.truckBanned).toBeGreaterThan(0);
+    expect(kinds.has(0)).toBe(true);
+    expect(sim.truckUnloads).toBeGreaterThan(3);
+    expect(longest).toBeGreaterThan(100);
+    expect(sim.wideTurnBlocks).toBeGreaterThan(0);
+    const off = new Simulation(data, { seed: 2, controller: 'fixed', scenario: 'normal', demandScale: 1, dt: 0.5, trucks: { peakBan: true, unloadP: 0.06, unloadMin: [2, 8], wideTurns: true } });
+    const k2 = new Set<number>(); for (let i = 0; i < 1600; i++) { off.step(); if (i % 20 === 0) for (const l of off.linkV) for (const v of l) if (v.type === 3) k2.add(v.kind); }
+    expect(k2.has(1) || k2.has(2)).toBe(true); // off-peak: heavy trucks allowed
+  });
+});
