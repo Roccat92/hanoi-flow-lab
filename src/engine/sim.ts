@@ -4,7 +4,8 @@ import { Rng } from './rng';
 import { SCENARIOS, VTYPES, fullMix, LOCAL_MIX, LOCAL_SHARE, type Scenario } from './scenarios';
 import { makeController, FixedTime, Actuated, AiCoordinated, SAFETY, type Controller, type PhaseObs, type SignalState } from './controllers';
 import { modeFor, isSignalMode, CTRL_LABEL } from './modes';
-import { DEFAULT_CRASH, type NodeMode, type CrashCfg, type DecisionLog, type MapData, type Metrics, type SimConfig, type SimEvent, type VType } from './types';
+import { BUS_CAP, PEAK, PAX_PER_H, TRUCK_KINDS, binom, dwellTime, type Line, type StopPt } from './transit';
+import { DEFAULT_CRASH, DEFAULT_BUS, DEFAULT_TRUCK, type BusCfg, type TruckCfg, type NodeMode, type CrashCfg, type DecisionLog, type MapData, type Metrics, type SimConfig, type SimEvent, type VType } from './types';
 
 export class Veh {
   id = 0; type: VType = 0; len = 0; w = 0; a = 0; b = 0; T = 0; s0 = 0; v0f = 1; pcu = 1;
@@ -15,6 +16,11 @@ export class Veh {
   frozen = -1; // id of the modelled fender-bender this vehicle is stuck in
   tw = false; cls = 1; vcap = 99; local = false; dwellUntil = -1; servedStop = -1; rude = 0; violated = false;
   gx0 = 0; gy0 = 0; gh0 = 0; gx3 = 0; gy3 = 0; gh3 = 0; // movement geometry
+  // fixed-line buses: line index, path + position on it, next stop, passengers on board
+  line = -1; path: number[] | null = null; pi = 0; si = 0; pax = 0; nA = 0; nB = 0; dwellT0 = 0; inLane = false;
+  // kerb stop target on the current link: 1 official bus stop, 2 passenger waving (hail), 3 truck unloading
+  kerbMode = 0; kerbS = -1; kerbSid = -1; kerbDur = 0; mergeUntil = 0;
+  kind = -1; cargo = ''; unloads = 0; wb = false;
 }
 
 interface Source { link: number; rate: number; nextT: number; queue: Veh[]; west: boolean; local: boolean; zone: number }
@@ -54,11 +60,18 @@ export class Simulation {
   ctrls = new Map<number, Controller>(); private inst = new Map<NodeMode, Controller>(); uMode: Uint8Array; nodeMode = new Map<number, NodeMode>();
   sigNodes: number[] = []; nearMiss = 0; hardBrakes = 0; gridlockEvents = 0; gridlockNodeS = 0; private gridlocked: Uint8Array;
   nodeFlow: Float64Array; nodeWaitS: Float64Array; label = '';
+  // buses (fixed OSM lines) and trucks
+  busCfg: BusCfg; truckCfg: TruckCfg; private busRng: Rng; private frRng: Rng; lines: Line[] = []; stopPts: StopPt[] = [];
+  busRuns = 0; busDist = 0; busTime = 0; busWaitSum = 0; busBoarded = 0; busAlighted = 0; busDeps = 0; busBunched = 0; busInLane = 0; busHail = 0; busMissed = 0;
+  truckUnloads = 0; truckBanned = 0; wideTurnBlocks = 0;
 
   constructor(data: MapData, public cfg: SimConfig) {
     this.crashCfg = { ...DEFAULT_CRASH, ...(cfg.crashes ?? {}) };
     // separate stream: crash times/places do not depend on the controller or on traffic
     this.crashRng = new Rng((cfg.seed * 7919 + 17) >>> 0);
+    // separate streams for bus timetables / passengers and for freight stops: identical schedules for every controller
+    this.busRng = new Rng((cfg.seed * 104729 + 5) >>> 0); this.frRng = new Rng((cfg.seed * 15485863 + 11) >>> 0);
+    this.busCfg = { ...DEFAULT_BUS, ...(cfg.bus ?? {}) }; this.truckCfg = { ...DEFAULT_TRUCK, ...(cfg.trucks ?? {}) };
     this.net = new Network(data, cfg.edits ?? {}); this.router = new Router(this.net); this.rng = new Rng(cfg.seed);
     this.sc = SCENARIOS[cfg.scenario]; this.mix = fullMix(this.sc.mix); this.chaos = Math.max(0, Math.min(1, cfg.chaos ?? cfg.edits?.chaos ?? 0.6)); this.ctrl = makeController(cfg.controller);
     this.label = CTRL_LABEL[cfg.controller] ?? this.ctrl.label;
@@ -72,7 +85,7 @@ export class Simulation {
     this.goCache = new Int32Array(nM); this.goStamp = new Int32Array(nM).fill(-1); this.resv = new Int32Array(nM);
     for (const m of this.net.moves) this.moveOf.set(m.inL * 65536 + m.outL, m.id);
     for (const L of this.net.links) this.linkSpeed[L.id] = L.vmax;
-    this.setupEvent(); this.setupZones(); this.setupSinks(); this.setupSignals(); this.setupZebras(); this.setupBusStops(); this.setupSources(); this.setupIncident(); this.scheduleCrash();
+    this.setupEvent(); this.setupZones(); this.setupSinks(); this.setupSignals(); this.setupZebras(); this.setupBusStops(); this.setupBusLines(); this.setupSources(); this.setupIncident(); this.scheduleCrash();
   }
 
   // ---------------------------------------------------------------- setup
@@ -399,6 +412,11 @@ export class Simulation {
     v.id = this.nextId++; v.type = type; v.len = p.len; v.w = p.w; v.a = p.a * sc.accelFactor * r.range(0.85, 1.15);
     v.b = p.b; v.T = p.T * sc.headwayFactor * r.range(0.85, 1.2); v.s0 = p.s0; v.v0f = p.vf * sc.speedFactor * r.range(0.88, 1.1); v.pcu = p.pcu;
     if (p.tw) { v.T *= 1 - 0.35 * this.chaos; v.s0 *= 1 - 0.4 * this.chaos; }
+    if (type === 3) { // truck kind, cargo; peak-hour ban keeps heavy / construction trucks out (assumption)
+      let k = r.pick([0, 1, 2, 3], TRUCK_KINDS.map(x => x.share));
+      if (this.truckCfg.peakBan && PEAK[this.cfg.scenario] && (k === 1 || k === 2)) { k = 0; this.truckBanned++; }
+      const K = TRUCK_KINDS[k]; v.kind = k; v.len = K.len; v.w = K.w; v.a = K.a * sc.accelFactor * r.range(0.85, 1.15); v.cargo = K.cargo[Math.floor(r.next() * K.cargo.length)];
+    }
     v.tw = p.tw; v.cls = p.tw ? 0 : p.heavy ? 2 : 1; v.vcap = p.vcap * (type === 4 ? r.range(0.8, 1.15) : 1); v.local = zone >= 0;
     // propensity to break rules (two-wheelers, taxis); scaled by the editor setting
     const vm = this.cfg.edits?.violations ?? 1;
@@ -432,11 +450,14 @@ export class Simulation {
       s.queue.push(this.makeVeh(type, s.link, s.zone)); this.spawned++;
       s.nextT += this.rng.exp(s.rate * this.spawnRate());
     }
+    this.place(s.link, s.queue);
+  }
+  private place(link: number, queue: Veh[]) {
     const cap = this.cfg.maxVehicles ?? Infinity;
-    const L = this.net.links[s.link]; const list = this.linkV[s.link];
+    const L = this.net.links[link]; const list = this.linkV[link];
     let guard = 0;
-    while (s.queue.length && guard++ < 4 && this.activeCount < cap) {
-      const v = s.queue[0];
+    while (queue.length && guard++ < 4 && this.activeCount < cap) {
+      const v = queue[0];
       const cand = v.tw ? [0.2, 0.5, 0.8, 0.35, 0.65, 0.1, 0.9] : laneCenters(L);
       let placed = false;
       for (const c of cand) {
@@ -445,18 +466,184 @@ export class Simulation {
         let ok = true;
         for (let i = list.length - 1; i >= 0; i--) { const o = list[i]; if (o.s - MAXLEN > front + 3 + o.v * 0.8) break; if (o.s - o.len < front + 3 + o.v * 0.8 && overlapLat(o, lat, v.w, 0.25)) { ok = false; break; } }
         if (ok) for (const mi of L.inMoves) for (const o of this.mvV[mi]) if (overlapLat(o, lat, v.w, 0.25)) { ok = false; break; }
-        if (ok) { v.lat = v.latT = lat; v.s = front; v.link = s.link; placed = true; break; }
+        if (ok) { v.lat = v.latT = lat; v.s = front; v.link = link; placed = true; break; }
       }
       if (!placed) break;
-      s.queue.shift();
-      v.v = Math.min(L.vmax * v.v0f * 0.5, 6); v.tEnter = this.t; v.next = this.nextLinkOf(v, s.link);
+      queue.shift();
+      v.v = Math.min(L.vmax * v.v0f * 0.5, 6); v.tEnter = this.t; v.next = this.nextLinkOf(v, link);
       list.push(v); this.activeCount++;
     }
+  }
+
+  /** fixed bus lines from OSM (bus_lines.json): validate each path against the (edited) network, build shared stops, prefill waiting passengers */
+  private setupBusLines() {
+    const lines = this.busCfg.lines ? this.net.data.busLines ?? [] : [];
+    if (!lines.length) return;
+    this.mix[2] = 0; // line buses replace the generic bus share
+    const peak = PEAK[this.cfg.scenario]; const rate = PAX_PER_H[this.cfg.scenario] * this.busCfg.paxScale / 3600;
+    const key = new Map<string, StopPt>();
+    for (const d of lines) {
+      const path: number[] = [];
+      for (const l of d.links) {
+        const L = this.net.links[l]; if (!L || L.closed || !L.carOk) break;
+        if (path.length && !this.moveOf.has(path[path.length - 1] * 65536 + l)) break;
+        if (path.includes(l)) break;
+        path.push(l);
+      }
+      let len = 0; for (const l of path) len += this.net.links[l].len;
+      if (path.length < 2 || len < 300) continue;
+      const idx = this.lines.length;
+      const hw = (peak ? d.headwayMin[0] : d.headwayMin[1]) * 60;
+      const ln: Line = { idx, ref: d.ref, name: d.name, colour: d.colour || '#1e88e5', inferred: d.headwayInferred, path, stops: [], headwayS: hw, nextT: this.busRng.range(0, hw), queue: [], lastDep: new Float64Array(0), runs: 0 };
+      for (const st of d.stops) {
+        const pi = path.indexOf(st.link); if (pi < 0) continue;
+        const L = this.net.links[st.link];
+        const sPos = Math.min(L.stopS - 4, Math.max(L.startS + 14, st.s)); if (sPos < L.startS + 14) continue;
+        const k = st.link + ':' + Math.round(sPos / 20);
+        let sp = key.get(k);
+        if (!sp) { sp = { id: this.stopPts.length, link: st.link, s: sPos, name: st.name, lines: [], wait: [], nextArr: [], rate: [], boardingUntil: -1 }; key.set(k, sp); this.stopPts.push(sp); }
+        if (sp.lines.includes(idx)) continue;
+        sp.lines.push(idx); sp.rate.push(rate);
+        // passengers already waiting at t = 0: arrivals over the last half headway
+        const w: number[] = []; let t0 = -hw / 2 + this.busRng.exp(rate); while (t0 < 0) { w.push(t0); t0 += this.busRng.exp(rate); }
+        sp.wait.push(w); sp.nextArr.push(t0);
+        ln.stops.push({ link: st.link, s: sp.s, sid: sp.id, pi });
+      }
+      ln.stops.sort((a, b) => a.pi - b.pi || a.s - b.s);
+      ln.lastDep = new Float64Array(ln.stops.length).fill(-1);
+      this.lines.push(ln);
+      // warm start: the previous bus of the line is already somewhere on the route (about one headway ahead at ~12 km/h)
+      const d0 = this.busRng.next() * hw * 3.3;
+      if (d0 < len) {
+        let cum = 0, k = 0; while (k < path.length - 1 && cum + this.net.links[path[k]].len < d0) { cum += this.net.links[path[k]].len; k++; }
+        if (k > 0) { const b = this.makeBus(ln); b.pi = k; while (b.si < ln.stops.length && ln.stops[b.si].pi < k) b.si++; this.warm.push([path[k], b]); }
+      }
+    }
+  }
+  /** timetable departures (headway with +-20 % irregularity) and passenger arrivals; both from the bus stream */
+  private warm: [number, Veh][] = [];
+  private updateBuses() {
+    if (this.warm.length) this.warm = this.warm.filter(([l, b]) => { const q = [b]; this.place(l, q); return q.length > 0; });
+    for (const ln of this.lines) {
+      while (ln.nextT <= this.t) { (ln.queue as Veh[]).push(this.makeBus(ln)); ln.nextT += ln.headwayS * this.busRng.range(0.8, 1.2); }
+      if (ln.queue.length) this.place(ln.path[0], ln.queue as Veh[]);
+    }
+    if (this.step_ % Math.round(1 / this.cfg.dt) === 0) for (const sp of this.stopPts) for (let k = 0; k < sp.lines.length; k++) {
+      while (sp.nextArr[k] <= this.t) { sp.wait[k].push(sp.nextArr[k]); sp.nextArr[k] += this.busRng.exp(sp.rate[k]); }
+      if (sp.wait[k].length > 120) sp.wait[k].shift(); // people give up / take a xe ôm
+    }
+  }
+  private makeBus(ln: Line): Veh {
+    const p = VTYPES[2]; const v = new Veh(); const sc = this.sc; const r = this.busRng;
+    v.id = this.nextId++; v.type = 2; v.len = p.len; v.w = p.w; v.a = p.a * sc.accelFactor * r.range(0.9, 1.1);
+    v.b = p.b; v.T = p.T * sc.headwayFactor; v.s0 = p.s0; v.v0f = p.vf * sc.speedFactor * r.range(0.92, 1.05); v.pcu = p.pcu;
+    v.cls = 2; v.tCreate = this.t; v.line = ln.idx; v.path = ln.path; v.pi = 0; v.si = 0; v.dest = ln.path[ln.path.length - 1];
+    let ff = 0; for (const l of ln.path) ff += this.net.links[l].len / this.net.links[l].vmax; v.ff = ff;
+    v.pax = Math.round(r.range(0.15, 0.55) * BUS_CAP * (PEAK[this.cfg.scenario] ? 1 : 0.6));
+    this.spawned++; ln.runs++; this.busRuns++;
+    return v;
+  }
+  /** decide where (if anywhere) v pulls over on the link it just entered */
+  private planKerbStop(v: Veh, link: number) {
+    v.kerbMode = 0; v.kerbS = -1; v.kerbSid = -1;
+    const L = this.net.links[link]; if (v.type !== 2 && v.type !== 3) return;
+    if (v.line >= 0) {
+      const ln = this.lines[v.line];
+      while (v.si < ln.stops.length && ln.stops[v.si].pi < v.pi) v.si++;
+      const st = ln.stops[v.si];
+      if (st && st.pi === v.pi) {
+        const sp = this.stopPts[st.sid]; const k = sp.lines.indexOf(v.line);
+        v.nA = binom(this.busRng, v.pax, v.si === ln.stops.length - 1 ? 0.35 : 0.14);
+        if (v.nA > 0 || sp.wait[k].length > 0 || this.busRng.next() < 0.3) { v.kerbMode = 1; v.kerbS = st.s; v.kerbSid = st.sid; }
+        else v.si++; // nobody to drop or pick up: drive past
+        return;
+      }
+      if (L.len > 60 && L.stopS - L.startS > 45 && this.busRng.next() < this.busCfg.hailP) {
+        v.kerbMode = 2; v.kerbS = this.busRng.range(L.startS + 20, L.stopS - 15); v.nA = this.busRng.next() < 0.3 ? 1 : 0;
+      }
+      return;
+    }
+    if (v.type === 3 && L.carOk && L.stopS - L.startS > 45 && !(this.incidentObs && link === this.incidentLink)) {
+      const del = v.kind === 0 && v.unloads === 0 && this.frRng.next() < this.truckCfg.unloadP;
+      const gar = v.kind === 3 && v.unloads < 4 && this.frRng.next() < 0.25;
+      if (del || gar) {
+        v.kerbMode = 3; v.kerbS = this.frRng.range(L.startS + 18, L.stopS - 20);
+        v.kerbDur = del ? this.frRng.range(this.truckCfg.unloadMin[0], this.truckCfg.unloadMin[1]) * 60 : this.frRng.range(20, 60);
+      }
+    }
+  }
+  kerbLat(L: Link, v: Veh) { return L.width - v.w / 2 - 0.15; }
+  private startDwell(v: Veh, L: Link) {
+    v.inLane = Math.abs(v.lat - this.kerbLat(L, v)) > 0.8; v.dwellT0 = this.t; v.v = 0;
+    if (v.kerbMode === 3) {
+      v.dwellUntil = this.t + v.kerbDur; this.truckUnloads++;
+      if (v.kind === 0 && v.kerbDur > 60) this.events.push({ t: this.t, kind: 'info', text: `${TRUCK_KINDS[v.kind].name} đỗ ${v.inLane ? 'giữa làn' : 'sát lề'} bốc dỡ ${v.cargo.toLowerCase()} ~${Math.round(v.kerbDur / 60)} phút - ${L.name || 'đường không tên'}`, x: this.net.nodes[L.from].x, y: this.net.nodes[L.from].y });
+      return;
+    }
+    if (v.inLane) this.busInLane++;
+    if (v.kerbMode === 2) { this.busHail++; v.nB = 1 + (this.busRng.next() < 0.3 ? 1 : 0); }
+    else {
+      const sp = this.stopPts[v.kerbSid]; const k = sp.lines.indexOf(v.line);
+      v.nA = Math.min(v.nA, v.pax);
+      v.nB = Math.min(sp.wait[k].length, BUS_CAP - v.pax + v.nA);
+      for (let j = 0; j < v.nB; j++) this.busWaitSum += this.t - sp.wait[k][j];
+      sp.wait[k].splice(0, v.nB); this.busBoarded += v.nB;
+    }
+    v.nA = Math.min(v.nA, v.pax); this.busAlighted += v.nA;
+    v.pax += v.nB - v.nA;
+    const dur = dwellTime(this.busRng, v.nB, v.nA, v.inLane);
+    v.dwellUntil = this.t + dur;
+    if (v.kerbMode === 1) this.stopPts[v.kerbSid].boardingUntil = v.dwellUntil;
+    this.busDwellSum += dur; this.busDwells++;
+  }
+  private endDwell(v: Veh) {
+    if (v.kerbMode === 1) {
+      const ln = this.lines[v.line]; const prev = ln.lastDep[v.si];
+      if (prev >= 0) { this.busDeps++; if (this.t - prev < 0.25 * ln.headwayS) this.busBunched++; }
+      ln.lastDep[v.si] = this.t; v.si++;
+    }
+    if (v.kerbMode === 3) v.unloads++;
+    v.kerbMode = 0; v.kerbS = -1; v.dwellUntil = -1; v.nA = v.nB = 0; v.mergeUntil = this.t + 25;
+  }
+  /** bus / truck pulling over: hard swerve to the kerb (cutting across two-wheelers, who brake or weave), then force back into the lane */
+  private kerbLateral(list: Veh[], i: number, L: Link, dt: number): boolean {
+    const v = list[i];
+    if (v.dwellUntil >= 0) return true;
+    let target: number, vlat: number;
+    if (v.kerbMode > 0 && v.kerbS - v.s < 70 && v.kerbS - v.s > -3) { target = this.kerbLat(L, v); vlat = 1.1; }
+    else if (v.mergeUntil > this.t) {
+      const lanes = laneCenters(L); const tl = this.turnBand(v, L);
+      target = tl >= 0 ? lanes[nearestIdx(lanes, tl)] : lanes[nearestIdx(lanes, v.lat)];
+      if (Math.abs(target - v.lat) < 0.05) { v.mergeUntil = 0; return true; }
+      vlat = 0.9;
+    } else return false;
+    const dl = target - v.lat;
+    if (Math.abs(dl) > 0.01) {
+      const nl = v.lat + Math.sign(dl) * Math.min(Math.abs(dl), vlat * dt);
+      if (this.lateralSafe(list, i, v, nl, 0.35)) v.lat = v.latT = nl; else v.latT = v.lat;
+    }
+    return true;
+  }
+  /** a bus / truck turning left or right swings wide over the adjacent lane: other movements from that approach wait */
+  private wideBlocked(m: Movement) {
+    const L = this.net.links[m.inL];
+    for (const om of L.outMoves) {
+      if (om === m.id) continue; const M = this.net.moves[om]; if (M.turn === 'T') continue;
+      for (const o of this.mvV[om]) if ((o.type === 2 || o.type === 3) && o.s < M.len * 0.6) return true;
+    }
+    return false;
   }
   activeCount = 0;
   private mix: number[] = [];
 
+  /** next link of v's route from `link` (called whenever v enters a link); also plans kerb stops on the new link */
   private nextLinkOf(v: Veh, link: number) {
+    const n = this.routeNext(v, link);
+    this.planKerbStop(v, link);
+    return n;
+  }
+  private routeNext(v: Veh, link: number) {
+    if (v.path) { const k = v.path.indexOf(link, v.pi); if (k >= 0) { v.pi = k; return k + 1 < v.path.length ? v.path[k + 1] : -1; } }
     if (link === v.dest) return -1;
     const t = this.table(v.dest, v.cls);
     let n = t.next[link];
@@ -576,6 +763,7 @@ export class Simulation {
     const m = this.net.moves[mi]; const col = this.sigColor(mi);
     if (col === 'R' || col === 'Y') return false;
     if (this.zebraBlock[mi]) return false; // pedestrians on the crosswalk
+    if (this.truckCfg.wideTurns && !v.tw && this.wideBlocked(m)) { if (!v.wb) { v.wb = true; this.wideTurnBlocks++; } return false; }
     if (this.goStamp[mi] !== this.step_) {
       this.goStamp[mi] = this.step_;
       const box = this.boxClear(m);
@@ -675,6 +863,7 @@ export class Simulation {
   step() {
     const dt = this.cfg.dt; this.step_++;
     for (const s of this.sources) this.trySpawn(s);
+    if (this.lines.length) this.updateBuses();
     this.incidentUpdate();
     this.crashUpdate();
     this.updateSignals(dt);
@@ -794,8 +983,19 @@ export class Simulation {
     // unsignalised zebra with pedestrians on it
     const zs = this.zebraAhead(L, v.s);
     if (zs < Infinity) { const g2 = zs - 2.5 - v.s; if (g2 < gap) { gap = Math.max(0, g2) + 0.05; vl = 0; } }
-    // buses serve stops: pull in, dwell, block the kerb side
-    if (v.type === 2) {
+    // line buses / trucks: stop at the kerb target (in lane if the kerb is taken), dwell, then go
+    if (v.kerbMode > 0) {
+      const d = v.kerbS - v.s;
+      if (v.dwellUntil >= 0) {
+        if (this.t >= v.dwellUntil) this.endDwell(v); else { gap = 0.05; vl = 0; }
+      } else if (d < -3) { if (v.kerbMode === 1) { this.busMissed++; v.si++; } v.kerbMode = 0; }
+      else {
+        // queued right behind another bus serving the same stop: open the doors here (second berth)
+        const berth2 = v.kerbMode === 1 && v.v < 0.3 && d < 25 && ld && ld.line >= 0 && ld.dwellUntil >= 0 && gap < 4;
+        if ((d < 2 && v.v < 0.5) || berth2) { this.startDwell(v, L); gap = 0.05; vl = 0; }
+        else if (d + v.s0 < gap) { gap = d + v.s0; vl = 0; }
+      }
+    } else if (v.type === 2 && v.line < 0) { // generic (non-line) buses: old behaviour
       const stops = this.stopsOnLink.get(L.id);
       if (stops) for (const bs of stops) {
         if (bs.s < v.s - 0.5 || v.servedStop === bs.id + L.id * 1000) continue;
@@ -833,6 +1033,7 @@ export class Simulation {
   /** sublane lateral behaviour: motorbikes filter through gaps, cars change lanes; both pre-position for turns */
   private lateral(list: Veh[], i: number, L: Link, dt: number) {
     const v = list[i]; if (v.obstacle || v.frozen >= 0) return;
+    if ((v.kerbMode > 0 || v.mergeUntil > 0 || v.dwellUntil >= 0) && this.kerbLateral(list, i, L, dt)) return;
     const turnLat = this.turnBand(v, L);
     if (v.tw) {
       if ((this.step_ + v.id) % 2 === 0) {
@@ -890,7 +1091,7 @@ export class Simulation {
   }
   private frontGap(list: Veh[], i: number, v: Veh, lat: number) { const ld = this.leaderIn(list, i, v.s, lat, v.w, 60); return ld ? ld.s - ld.len - v.s : 60; }
   private turnBand(v: Veh, L: Link) {
-    if (v.type === 2) { const st = this.stopsOnLink.get(L.id); if (st && st.some(b => b.s > v.s && b.s - v.s < 80 && v.servedStop !== b.id + L.id * 1000)) return L.width - v.w / 2 - 0.3; }
+    if (v.type === 2 && v.line < 0) { const st = this.stopsOnLink.get(L.id); if (st && st.some(b => b.s > v.s && b.s - v.s < 80 && v.servedStop !== b.id + L.id * 1000)) return L.width - v.w / 2 - 0.3; }
     if (v.next < 0 || L.stopS - v.s > 70) return -1;
     const mi = this.moveFor(v); if (mi < 0) return -1;
     const t = this.net.moves[mi].turn;
@@ -898,14 +1099,14 @@ export class Simulation {
     return t === 'R' ? L.width - v.w / 2 - 0.3 : v.w / 2 + 0.3;
   }
   /** no vehicle alongside would overlap if v were at lateral position c (incl. follower safety gap) */
-  private lateralSafe(list: Veh[], i: number, v: Veh, c: number) {
+  private lateralSafe(list: Veh[], i: number, v: Veh, c: number, fm = 0.6) {
     const lo = Math.min(v.lat, c), hi = Math.max(v.lat, c);
     for (let j = i - 1; j >= 0; j--) {
       const o = list[j]; if (o.s > v.s + MAXLEN + 2) break; if (o.s - o.len > v.s + 0.5 + v.v * 0.3) continue;
       if (sweepOverlap(o, lo, hi, v.w)) return false;
     }
     for (let j = i + 1; j < list.length; j++) {
-      const o = list[j]; if (o.s < v.s - v.len - 1 - o.v * 0.6) break;
+      const o = list[j]; if (o.s < v.s - v.len - 1 - o.v * fm) break;
       if (sweepOverlap(o, lo, hi, v.w)) return false;
     }
     // vehicles about to enter this link from the junction behind
@@ -973,7 +1174,8 @@ export class Simulation {
     if (ds > this.maxDisp) this.maxDisp = ds;
     if (v.acc < -4.5 && v.v > 2) { if (!v.hb) { v.hb = true; this.hardBrakes++; } } else if (v.acc > -1) v.hb = false;
     v.s += ds; v.v = nv; v.dist += ds;
-    const st = v.v < 0.5;
+    if (v.line >= 0) { this.busDist += ds; this.busTime += dt; }
+    const st = v.v < 0.5 && v.dwellUntil < 0; // dwelling at a stop / unloading is not a traffic stop
     if (st) { if (!v.stopped) { v.stopped = true; v.stops++; } v.stopT += dt; v.waitTotal += dt; }
     else if (v.v > 2) { v.stopped = false; v.stopT = 0; }
     this.co2g += VTYPES[v.type].co2 * ds / 1000 * (1 + Math.max(0, v.acc) * 0.25) + (st ? VTYPES[v.type].co2 * 0.0025 * dt : 0);
@@ -1012,7 +1214,7 @@ export class Simulation {
   // ---------------------------------------------------------------- metrics / checks
   metrics(): Metrics {
     let sv = 0, n = 0, stopped = 0, longS = 0, pcuQ = 0, maxQ = 0;
-    const forEach = (v: Veh) => { if (v.obstacle) return; n++; sv += v.v; if (v.v < 0.5) { stopped++; pcuQ += v.pcu; if (v.stopT > 120) longS++; } };
+    const forEach = (v: Veh) => { if (v.obstacle) return; n++; sv += v.v; if (v.v < 0.5 && v.dwellUntil < 0) { stopped++; pcuQ += v.pcu; if (v.stopT > 120) longS++; } };
     for (const l of this.linkV) for (const v of l) forEach(v);
     for (const l of this.mvV) for (const v of l) forEach(v);
     for (const nid of this.sigNodes) { const nd = this.net.nodes[nid]; for (const li of nd.inLinks) { let q = 0; for (const v of this.linkV[li]) if (v.v < 1 && !v.obstacle) q++; maxQ = Math.max(maxQ, q); } }
@@ -1027,6 +1229,8 @@ export class Simulation {
       avgStops: this.completed ? this.sumStops / this.completed : 0, pcuQueued: pcuQ, longStopped: longS,
       co2kgH: this.t > 0 ? this.co2g / 1000 / (this.t / 3600) : 0, pedWaitS: this.pedServed ? this.pedWaitSum / this.pedServed : 0, maxQueue: maxQ,
       violations: this.violations, nearMiss: this.nearMiss, hardBrakes: this.hardBrakes, gridlockEvents: this.gridlockEvents, gridlockNodeS: this.gridlockNodeS, localTrips: this.localTrips, pedCrossed: this.pedCrossed, busDwellS: this.busDwells ? this.busDwellSum / this.busDwells : 0,
+      busRuns: this.busRuns, busSpeedKmh: this.busTime ? this.busDist / this.busTime * 3.6 : 0, busPaxWaitS: this.busBoarded ? this.busWaitSum / this.busBoarded : 0, busBoarded: this.busBoarded,
+      busBunching: this.busDeps ? this.busBunched / this.busDeps : 0, busInLane: this.busInLane, busHail: this.busHail, truckUnloads: this.truckUnloads, wideTurnBlocks: this.wideTurnBlocks,
       ...(recent.length ? { recentDelayS: rd / recent.length, recentTravelS: rt / recent.length, recentStops: rs / recent.length } : {}),
     } as Metrics;
   }

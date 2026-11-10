@@ -1,3 +1,4 @@
+import { loadData } from './loadData';
 // Derive the per-junction control logic by simulation.
 // Search space: interpretable policies "signal (AI v2 or actuated) at junctions whose flow >= theta, the rest dark (off) or flashing amber",
 // plus the structural "major junctions only" rule. Training: seeds 11,12,13 x morning, evening, incident (30 min).
@@ -10,7 +11,7 @@ import { run1 } from './pool';
 import { Network } from '../src/engine/network';
 import { isMajor } from '../src/engine/modes';
 const TRAIN_SEEDS = [11, 12, 13], TRAIN_SC = ['morning', 'evening', 'incident'], MIN = 30, W_NM = 0.01;
-const data = JSON.parse(readFileSync('public/data/dongda.json', 'utf8')); const net = new Network(data, {});
+const data = loadData(); const net = new Network(data, {});
 async function evalCfg(controller: string, nodeModes?: Record<number, string>) {
   const rs = await Promise.all(TRAIN_SC.flatMap(scenario => TRAIN_SEEDS.map(seed => run1({ scenario, seed, controller, minutes: MIN, nodeModes }))));
   const vehH = rs.reduce((a, r) => a + r.summary.totalVehHoursLost, 0), nm = rs.reduce((a, r) => a + r.summary.nearMiss, 0);

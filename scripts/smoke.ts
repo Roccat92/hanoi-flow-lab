@@ -1,6 +1,7 @@
+import { loadData } from './loadData';
 import { readFileSync } from 'fs';
 import { Simulation } from '../src/engine/sim';
-const data = JSON.parse(readFileSync('public/data/dongda.json', 'utf8'));
+const data = loadData();
 const ctrl = (process.argv[2] ?? 'fixed') as any, sc = (process.argv[3] ?? 'normal') as any, mins = +(process.argv[4] ?? 20);
 const sim = new Simulation(data, { seed: 42, controller: ctrl, scenario: sc, demandScale: 1, dt: 0.5 });
 sim.checkSafety = true;

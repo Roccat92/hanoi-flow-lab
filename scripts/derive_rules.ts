@@ -1,8 +1,9 @@
+import { loadData } from './loadData';
 // Turn the optimiser output into plain-language rules grounded in the measured data. Writes results/rules.json
 import { readFileSync, writeFileSync } from 'fs';
 import { Network } from '../src/engine/network';
 import { isMajor, isSignalMode, MODE_LABEL } from '../src/engine/modes';
-const data = JSON.parse(readFileSync('public/data/dongda.json', 'utf8'));
+const data = loadData();
 const opt = JSON.parse(readFileSync('results/optimize.json', 'utf8'));
 for (const x of opt.policies) if (x.desc.theta === null) x.desc.theta = Infinity; if (opt.best.desc.theta === null) opt.best.desc.theta = Infinity;
 const net = new Network(data, {});

@@ -5,6 +5,8 @@ export interface MapData {
   nodes: MapNode[]; links: MapLink[]; buildings: { p: number[]; l: number }[];
   busStops?: { link: number; s: number; name: string; osm: number }[];
   crossings?: { link: number; s: number; signal: boolean; osm: number }[];
+  /** fixed bus lines (merged in from public/data/bus_lines.json) */
+  busLines?: import('./transit').BusLineData[];
 }
 
 export type ControllerKind = 'fixed' | 'actuated' | 'ai' | 'nosignal' | 'major' | 'flash' | 'allway' | 'optimal';
@@ -36,7 +38,25 @@ export interface SimConfig {
   crashes?: CrashCfg;
   /** per-junction control overrides (node id -> mode); used by the optimiser and the 'optimal' preset */
   nodeModes?: Record<number, NodeMode>;
+  bus?: BusCfg;
+  trucks?: TruckCfg;
 }
+/** buses: fixed OSM lines replace the generic bus share of the mix */
+export interface BusCfg {
+  lines: boolean;     // run fixed lines (else generic buses from the mix, old behaviour)
+  hailP: number;      // probability per link entered that a passenger waves the bus down outside a stop
+  paxScale: number;   // multiplies passenger arrival rates
+  tsp: boolean;       // transit signal priority in the AI controller
+}
+export const DEFAULT_BUS: BusCfg = { lines: true, hailP: 0.04, paxScale: 1, tsp: false };
+/** trucks: kinds, peak-hour ban, double-parked deliveries */
+export interface TruckCfg {
+  peakBan: boolean;   // ASSUMPTION: heavy and construction trucks are kept out of the inner city in the morning / evening peaks (Hanoi rule simplified)
+  unloadP: number;    // probability per link entered that a delivery truck double-parks to unload (max one stop per trip)
+  unloadMin: [number, number]; // unloading duration range, minutes
+  wideTurns: boolean; // turning buses / trucks swing into the adjacent lane and block other movements from the same approach
+}
+export const DEFAULT_TRUCK: TruckCfg = { peakBan: true, unloadP: 0.06, unloadMin: [2, 8], wideTurns: true };
 /** modelled minor collisions ("va quẹt"): scheduled from a separate seeded stream, identical for every controller */
 export interface CrashCfg { on: boolean; perHour: number; minMin: number; maxMin: number; crowd: boolean }
 export const DEFAULT_CRASH: CrashCfg = { on: true, perHour: 1.0, minMin: 20, maxMin: 40, crowd: true };
@@ -67,6 +87,15 @@ export interface Metrics {
   hardBrakes?: number;    // decelerations harder than 4.5 m/s^2 from > 2 m/s
   gridlockEvents?: number; // junction episodes where every occupied approach has stood still > 60 s
   gridlockNodeS?: number;
+  busRuns?: number;        // line buses that entered
+  busSpeedKmh?: number;    // average speed of line buses incl. dwell (km/h)
+  busPaxWaitS?: number;    // average wait of boarded passengers (s)
+  busBoarded?: number;
+  busBunching?: number;    // share of departures at a stop < 25 % of the scheduled headway after the previous bus of the same line
+  busInLane?: number;      // stops made in the travel lane (kerb occupied)
+  busHail?: number;        // stops outside official stops (passenger waving)
+  truckUnloads?: number;   // double-parked deliveries started
+  wideTurnBlocks?: number; // vehicles held back by a turning bus / truck swinging wide
 }
 
 export interface DecisionLog { t: number; node: number; from: number; to: number; kind: 'switch' | 'hold' | 'force'; text: string; values: Record<string, number> }

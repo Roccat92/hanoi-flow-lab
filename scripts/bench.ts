@@ -1,8 +1,9 @@
+import { loadData } from './loadData';
 // Engine benchmark: npx tsx scripts/bench.ts  -> results/bench.json
 // Fills the network to a target vehicle count (demand x scale, active cap) and measures step time.
 import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { Simulation } from '../src/engine/sim';
-const data = JSON.parse(readFileSync('public/data/dongda.json', 'utf8'));
+const data = loadData();
 const targets = (process.argv[2] ?? '1000,3000,5000,10000').split(',').map(Number);
 const out: any[] = [];
 for (const target of targets) {

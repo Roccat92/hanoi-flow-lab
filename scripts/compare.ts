@@ -1,7 +1,8 @@
+import { loadData } from './loadData';
 // Headless scientific comparison: npx tsx scripts/compare.ts [scenario] [minutes] [seeds,comma] [demandScale]
 import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { runComparison } from '../src/sim/compare';
-const data = JSON.parse(readFileSync('public/data/dongda.json', 'utf8'));
+const data = loadData();
 const scenario = (process.argv[2] ?? 'morning') as any, minutes = +(process.argv[3] ?? 30);
 const seeds = (process.argv[4] ?? '1,2,3').split(',').map(Number), demandScale = +(process.argv[5] ?? 1);
 const keys = ['avgDelayS', 'avgTravelS', 'completed', 'throughputVph', 'avgSpeedKmh', 'avgStops', 'active', 'waitingEntry', 'totalVehHoursLost', 'pedWaitS', 'switches', 'forced'];

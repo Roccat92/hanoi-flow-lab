@@ -7,6 +7,7 @@ import { SAFETY } from '../src/engine/controllers';
 import type { MapData, ControllerKind } from '../src/engine/types';
 
 const data: MapData = JSON.parse(readFileSync('public/data/dongda.json', 'utf8'));
+data.busLines = JSON.parse(readFileSync('public/data/bus_lines.json', 'utf8')).lines;
 const run = (controller: ControllerKind, steps: number, seed = 7, scenario: any = 'morning') => {
   const sim = new Simulation(data, { seed, controller, scenario, demandScale: 1, dt: 0.5 });
   sim.checkSafety = true;
