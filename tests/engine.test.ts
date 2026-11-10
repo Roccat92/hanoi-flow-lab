@@ -206,8 +206,8 @@ describe('realism', () => {
     const ev = sims.map(s => s.events.filter(e => e.kind === 'crash'));
     expect(ev[0].length).toBeGreaterThan(1);
     expect(ev[1].length).toBeGreaterThan(1);
-    // the drawn schedule (time to within the search window, road name) is identical
-    expect(ev[0][0].text.split(':')[0]).toBe(ev[1][0].text.split(':')[0]);
+    // the drawn schedule (time, link) is identical; the realised pair is the first suitable one on / nearest to that link (traffic-dependent)
+    expect(sims[0].crashPlan.slice(0, 3)).toEqual(sims[1].crashPlan.slice(0, 3));
     expect(Math.abs(ev[0][0].t - ev[1][0].t)).toBeLessThan(121);
     expect(sims[0].events.some(e => e.kind === 'crashEnd')).toBe(true);
     const off = new Simulation(data, { seed: 11, controller: 'fixed', scenario: 'normal', demandScale: 1, dt: 0.5, crashes: { ...cr, on: false } });

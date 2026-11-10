@@ -54,6 +54,7 @@ export class Simulation {
   spawned = 0; completed = 0; sumDelay = 0; sumTT = 0; sumStops = 0; co2g = 0; pedWaitSum = 0; pedServed = 0;
   incidentLink = -1; incidentObs: Veh | null = null; eventNode = -1; eventLinks: number[] = [];
   crashes: Crash[] = []; crashCfg: CrashCfg; events: SimEvent[] = []; private crashRng: Rng; private nextCrashT = Infinity; private crashLink = -1; private crashSeq = 0; private crashPlanT = 0;
+  crashPlan: { t: number; link: number }[] = [];
   safetyViolations = 0; checkSafety = false; maxDisp = 0; chaos = 0.6;
   private lastObs = new Map<number, PhaseObs[]>();
   /** per-junction control: signal controller per signalised node; uMode for unsignalised control (0 priority by road class, 1 dark/negotiation, 2 flashing amber, 3 all-way yield) */
@@ -350,6 +351,7 @@ export class Simulation {
     this.crashLink = cand.length ? this.crashRng.pick(cand.map(L => L.id), cand.map(L => L.len * L.rank)) : -1;
     (this as any).crashDur = this.crashRng.range(c.minMin, c.maxMin) * 60;
     (this as any).crashCrowd = c.crowd ? 2 + Math.floor(this.crashRng.next() * 5) : 0;
+    this.crashPlan.push({ t: Math.round(this.nextCrashT), link: this.crashLink });
   }
   /** at the scheduled time, the first suitable pair of close vehicles on (or nearest to) the drawn link collide lightly */
   private crashUpdate() {
