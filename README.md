@@ -72,6 +72,74 @@ Mạng SUMO được dựng lại từ OSM mới (có cả ngõ), nên mạng k�
 
 Trên SUMO, AI v2 hoàn thành nhiều chuyến hơn đèn cố định nhưng trễ TB ngang đèn cố định và **thua rõ** đèn cảm biến SUMO. Bản port trong `backend/simcore.py` dùng cùng quy tắc nhưng chỉ quan sát được theo làn SUMO (không có đoàn xe từ nút trên, năng lực bão hoà ước lượng thô), và pha SUMO do netconvert sinh ra khác pha của engine TS.
 
+## Thí nghiệm: không đèn, vàng nhấp nháy, chỉ đèn nút lớn và cấu hình tối ưu
+
+Các chế độ mới (chọn ở ô "Điều khiển", so sánh nhiều chế độ cùng lúc trong "⚗ So sánh", kết quả ở nút "📑 Kết quả"). Chỉ 32 nút vốn có đèn theo OSM đổi cách điều khiển; hình học nút giữ nguyên để so sánh công bằng.
+
+- Không đèn (tự thương lượng): chỉ đường lớn hơn hẳn (chênh >= 2 cấp) được nhường, còn lại ai đến trước/bạo hơn đi trước; xe máy chấp nhận khe 2 s (nhỏ hơn khi hỗn loạn cao) và chen vào sau 8 s chờ, ô tô dè dặt (nhìn mọi xe xung đột, khe 3.5 s). Vẫn không có va chạm vật lý (xe chỉ vào nút khi luồng xung đột trống), có thể kẹt cứng.
+- Vàng nhấp nháy: luật đường ưu tiên, đường nhỏ nhường đường lớn (khe 3 s), xe giảm tốc khi tới gần.
+- Chỉ đèn nút lớn: đèn AI v2 ở nút có >= 3 nhánh cấp secondary trở lên thuộc >= 2 tuyến (10 nút), nút khác tắt đèn.
+- Nhường mọi hướng (kiểu vòng xuyến, tuỳ chọn): mọi hướng nhường nhau, khe 2 s.
+- Cấu hình tối ưu (lai): kết quả tìm kiếm bằng mô phỏng bên dưới; mỗi nút có thể ghi đè chế độ trong trình chỉnh sửa.
+- Chỉ số an toàn: suýt va chạm (xe vào nút khi một xe xung đột đang chạy cách < 1.5 s), phanh gấp (> 4.5 m/s²), kẹt cứng nút (mọi hướng có xe đứng > 60 s, trong nút không ai chạy).
+- Chưa làm: chế độ công an điều tiết bằng tay.
+
+### Kết quả trên seed kiểm tra (1, 2, 3; không dùng khi tối ưu), 30 phút, hỗn loạn 0.6, cùng lịch va quẹt
+
+## Giờ-xe mất (càng thấp càng tốt, in đậm = tốt nhất)
+
+| Kịch bản | Cố định | Cảm biến | AI v2 | Không đèn | Chỉ nút lớn | Vàng nhấp nháy | Nhường mọi hướng | Tối ưu (lai) |
+|---|---|---|---|---|---|---|---|---|
+| Bình thường | 99.9 | 99.3 | 101.7 | **54.0** | 60.4 | 61.7 | 104.1 | 61.4 |
+| Cao điểm sáng | 217.6 | 216.5 | 210.1 | 164.4 | **152.8** | 175.5 | 240.9 | 173.7 |
+| Cao điểm chiều | 376.6 | 385.2 | 359.2 | 298.7 | 311.7 | 386.3 | 433.3 | **292.8** |
+| Tắc cực đoan | 566.3 | 537.2 | 520.4 | 530.6 | **477.9** | 548.8 | 633.8 | 494.5 |
+| Sự cố Xã Đàn | 176.0 | 165.7 | 137.6 | 118.7 | 132.4 | 145.0 | 180.1 | **110.2** |
+| Mưa lớn | 299.5 | 282.6 | 266.7 | **234.9** | 239.2 | 286.8 | 319.9 | 270.1 |
+| Sự kiện Gò Đống Đa | 109.1 | 96.7 | 91.9 | **62.1** | 75.3 | 80.3 | 106.6 | 72.4 |
+| **Tổng 7 kịch bản** | 1845.0 | 1783.2 | 1687.7 | 1463.4 | 1449.8 | 1684.4 | 2018.7 | 1475.1 |
+
+## An toàn và phụ (tổng 7 kịch bản, trung bình mỗi seed)
+
+| Chỉ số | Cố định | Cảm biến | AI v2 | Không đèn | Chỉ nút lớn | Vàng nhấp nháy | Nhường mọi hướng | Tối ưu (lai) |
+|---|---|---|---|---|---|---|---|---|
+| Suýt va chạm (lần) | 15549 | 15070 | 15406 | 20318 | 16517 | 20751 | 18263 | 16670 |
+| Phanh gấp (lần) | 212753 | 210965 | 215859 | 264722 | 250136 | 223893 | 221309 | 253171 |
+| Kẹt cứng nút (lần) | 295.7 | 260.7 | 231.0 | 202.0 | 139.0 | 155.0 | 162.7 | 107.7 |
+| Thời gian kẹt cứng (nút-giây) | 11557 | 12487 | 8773 | 10713 | 7423 | 8150 | 8017 | 9457 |
+| Chuyến hoàn thành | 24558 | 24903 | 25238 | 25667 | 25964 | 24785 | 23835 | 25984 |
+| Xung đột người đi bộ (mọi lượt) | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Vi phạm an toàn tín hiệu (mọi lượt) | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Trễ TB (s, TB 7 kịch bản) | 162.6 | 150.8 | 147.0 | 117.3 | 124.5 | 130.0 | 166.3 | 125.0 |
+| Người đi bộ chờ TB (s) | 28.4 | 23.9 | 24.2 | 24.9 | 21.0 | 25.7 | 42.3 | 22.0 |
+| Hàng chờ dài nhất TB (xe) | 40.1 | 35.9 | 40.4 | 32.0 | 31.9 | 47.7 | 39.4 | 34.1 |
+
+### Logic tối ưu rút ra từ dữ liệu
+
+Tìm trong 36 chính sách dễ hiểu (đèn AI v2 hoặc cảm biến ở nút có lưu lượng >= ngưỡng hoặc ở nút lớn, nút khác tắt đèn hoặc vàng nhấp nháy) trên seed huấn luyện 11, 12, 13 x cao điểm sáng, cao điểm chiều, sự cố. Mục tiêu: tổng giờ-xe mất + 0.01 x số lần suýt va chạm.
+
+- Kết quả tìm kiếm: 10 nút đèn cảm biến, 22 nút tắt đèn (trên 32 nút vốn có đèn theo OSM).
+- Nút giữ đèn: lưu lượng trung vị 1310 xe/h qua nút, 100% là nút lớn (>= 3 nhánh cấp secondary trở lên của >= 2 tuyến), trung vị 4 nhánh vào.
+- Nút bỏ đèn: lưu lượng trung vị 647 xe/h, 0% là nút lớn, trung vị 3 nhánh vào.
+- Ngưỡng đơn giản nhất tìm được: giữ đèn khi lưu lượng qua nút >= 1212 xe/h (khi chạy AI ở mọi nút) - khớp 75% lựa chọn của bộ tối ưu, nên đây chỉ là xu hướng, không phải luật tuyệt đối.
+- Chính sách tốt nhất trên dữ liệu huấn luyện: đèn cảm biến ở nút lớn, nút khác tắt đèn (J = 1906; AI v2 ở mọi nút J = 2319, không đèn J = 1915, chỉ nút lớn J = 1934).
+- 5 chính sách tiếp theo: tắt đèn ở mọi nút (J 1915); đèn AI v2 ở nút lớn, nút khác tắt đèn (J 1934); đèn cảm biến ở nút lớn, nút khác vàng nhấp nháy (J 1949); đèn AI v2 ở nút có lưu lượng >= 1212 xe/h, nút khác vàng nhấp nháy (J 1990); đèn AI v2 ở nút lớn, nút khác vàng nhấp nháy (J 2005).
+- Đánh đổi an toàn (huấn luyện): suýt va chạm +10% so với AI v2 ở mọi nút, trong khi tắt đèn toàn bộ là +38% và vàng nhấp nháy toàn bộ +45%. Giữ đèn ở nút lớn giữ lại phần lớn lợi ích an toàn của đèn, bỏ đèn ở nút nhỏ lấy lại phần lớn lợi ích thời gian.
+- Ở cùng cấu hình "chỉ nút lớn", đèn cảm biến tốt hơn AI v2 (J 1906 so với 1934), và tắt đèn hẳn ở nút nhỏ tốt hơn vàng nhấp nháy (vàng nhấp nháy bắt đường nhỏ chờ khe hở dài hơn).
+- Độ tin cậy: so với AI v2 ở mọi nút, chính sách này lệch -65, -50, -26, -163, -16, -15, -45, -34, -21 giờ-xe trên từng lượt huấn luyện (độ lệch chuẩn 46). Tìm kiếm tham lam từng nút (results/optimize_greedy.log) cho thấy hiệu quả đổi một nút đơn lẻ nhỏ hơn nhiễu giữa các lượt chạy, nên luật được rút ra ở cấp chính sách đơn giản, không ở cấp từng nút.
+
+Kiểm tra trên seed chưa thấy: cấu hình tối ưu (1475.1 giờ-xe) tốt hơn AI v2 ở mọi nút 12.6% và tốt hơn đèn cảm biến ở mọi nút 17.3%, nhưng **không** tốt hơn rõ "chỉ nút lớn (AI)" (1449.8) hay "không đèn" (1463.4); ba cấu hình này chênh nhau dưới 2%, nằm trong nhiễu giữa các lượt. Thứ hạng giữa chúng đổi theo kịch bản. Kết luận vững là ở cấp chính sách: bỏ đèn ở các nút nhỏ giảm mạnh giờ-xe mất, giữ đèn ở nút lớn giữ phần lớn an toàn (suýt va chạm +8% so với AI v2, so với +32% khi tắt đèn toàn bộ).
+
+Lưu ý:
+
+- Đây là kết quả của mô hình, chưa hiệu chỉnh bằng số đếm thực tế. Ở nút không đèn, mô hình cho xe vào nút chỉ khi các luồng xung đột đang trống (không có va chạm vật lý), nên nó có thể đánh giá khả năng thông qua của nút không đèn cao hơn thực tế; rủi ro an toàn được phản ánh qua số lần suýt va chạm và phanh gấp chứ không qua tai nạn thật.
+- Mục tiêu tối ưu chỉ phạt nhẹ suýt va chạm (0.01 giờ-xe mỗi lần). Nếu coi an toàn quan trọng hơn, lời giải sẽ giữ nhiều đèn hơn: xem dòng "hệ số an toàn hoà vốn" bên dưới.
+- Hệ số an toàn hoà vốn Không đèn so với AI v2: 164 giây trễ cho mỗi lần suýt va chạm. Nếu một lần suýt va chạm được coi là tệ hơn mức đó, AI v2 ở mọi nút thắng.
+- Hệ số an toàn hoà vốn Tối ưu (lai) so với AI v2: 606 giây trễ cho mỗi lần suýt va chạm. Nếu một lần suýt va chạm được coi là tệ hơn mức đó, AI v2 ở mọi nút thắng.
+- Hệ số an toàn hoà vốn Chỉ nút lớn so với AI v2: 771 giây trễ cho mỗi lần suýt va chạm. Nếu một lần suýt va chạm được coi là tệ hơn mức đó, AI v2 ở mọi nút thắng.
+
+Số liệu: `results/EXPERIMENTS.md`, `results/experiments.json`, `results/optimize.json`, `results/rules.json`. Chạy lại: `npx tsx scripts/optimize.ts && npx tsx scripts/derive_rules.ts && npx tsx scripts/experiments.ts`.
+
 ## Benchmark (đo trên máy build: Intel Xeon, Node 24, dt = 0.5 s)
 
 | Số xe trong mạng | ms/bước | bước/s | nhanh hơn thời gian thực |
@@ -107,11 +175,11 @@ python backend/server.py             # ws://localhost:8765/ws
 python backend/compare_sumo.py morning 30 1,2,3
 ```
 
-Tham số URL: `scenario`, `controller` (fixed/actuated/ai), `seed`, `demand`, `speed`, `layer=heat|density`, `night=1`, `quality=low`, `view=split`, `compare=1`, `cap` (giới hạn số xe), `chaos` (0-1), `crash=0` (tắt va quẹt), `crashRate` (lần/giờ), `editor=1`, `edits` (JSON), `backend`.
+Tham số URL: `scenario`, `controller` (fixed/actuated/ai), `seed`, `demand`, `speed`, `layer=heat|density`, `night=1`, `quality=low`, `view=split`, `compare=1`, `cap` (giới hạn số xe), `chaos` (0-1), `crash=0` (tắt va quẹt), `crashRate` (lần/giờ), `editor=1`, `edits` (JSON), `results=1`, controller thêm `nosignal`, `major`, `flash`, `allway`, `optimal`, `backend`.
 
 ## Ảnh chụp
 
-`shots/normal.png`, `shots/heatmap.png`, `shots/night.png`, `shots/split.png`, `shots/comparison.png`, `shots/inspect.png`, `shots/closeup.png` (cận cảnh hỗn loạn), `shots/pedestrians.png`, `shots/crash.png` (va quẹt), `shots/editor.png`, `shots/alleys.png` (ngõ).
+`shots/normal.png`, `shots/heatmap.png`, `shots/night.png`, `shots/split.png`, `shots/comparison.png`, `shots/inspect.png`, `shots/closeup.png` (cận cảnh hỗn loạn), `shots/pedestrians.png`, `shots/crash.png` (va quẹt), `shots/editor.png`, `shots/alleys.png` (ngõ), `shots/nosignal-gridlock.png` (không đèn, tắc cực đoan), `shots/optimal-map.png` (bản đồ chế độ từng nút), `shots/results.png` (trang kết quả).
 
 ## Giấy phép
 
