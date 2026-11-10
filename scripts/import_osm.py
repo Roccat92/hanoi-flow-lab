@@ -26,10 +26,10 @@ S, W, N, E = 21.004, 105.814, 21.024, 105.838
 TILE = 0.008
 
 KEEP = {'trunk', 'trunk_link', 'primary', 'primary_link', 'secondary', 'secondary_link',
-        'tertiary', 'tertiary_link', 'unclassified', 'residential'}
-CLS_RANK = {'trunk': 5, 'primary': 4, 'secondary': 3, 'tertiary': 2, 'unclassified': 1, 'residential': 1}
-DEF_SPEED = {'trunk': 60, 'primary': 50, 'secondary': 40, 'tertiary': 40, 'unclassified': 30, 'residential': 30}
-DEF_LANES_DIR = {'trunk': 3, 'primary': 2, 'secondary': 2, 'tertiary': 1, 'unclassified': 1, 'residential': 1}
+        'tertiary', 'tertiary_link', 'unclassified', 'residential', 'living_street', 'service'}
+CLS_RANK = {'alley': 0, 'trunk': 5, 'primary': 4, 'secondary': 3, 'tertiary': 2, 'unclassified': 1, 'residential': 1}
+DEF_SPEED = {'alley': 15, 'trunk': 60, 'primary': 50, 'secondary': 40, 'tertiary': 40, 'unclassified': 30, 'residential': 30}
+DEF_LANES_DIR = {'alley': 1, 'trunk': 3, 'primary': 2, 'secondary': 2, 'tertiary': 1, 'unclassified': 1, 'residential': 1}
 ALLEY_PREFIX = ('ngõ', 'ngách', 'hẻm', 'kiệt')
 MERGE_DIST = 25.0   # metres: junction nodes closer than this (and linked) are merged
 SIGNAL_SNAP = 35.0  # metres: traffic_signals node -> junction cluster
@@ -49,8 +49,8 @@ def fetch(url, data=None, timeout=90):
 def download():
     os.makedirs(RAW, exist_ok=True)
     files = []
-    q = f'[out:xml][timeout:120];(way["highway"]({S},{W},{N},{E});way["building"]({S},{W},{N},{E});node["highway"="traffic_signals"]({S},{W},{N},{E}););(._;>;);out body;'
-    cache = os.path.join(RAW, 'overpass.osm')
+    q = f'[out:xml][timeout:120];(way["highway"]({S},{W},{N},{E});way["building"]({S},{W},{N},{E});node["highway"="traffic_signals"]({S},{W},{N},{E});node["highway"="bus_stop"]({S},{W},{N},{E});node["public_transport"="platform"]({S},{W},{N},{E});node["highway"="crossing"]({S},{W},{N},{E}););(._;>;);out body;'
+    cache = os.path.join(RAW, 'overpass_v2.osm')
     if os.path.exists(cache):
         return [cache]
     tiles = []
@@ -121,10 +121,20 @@ def is_road(tags):
         return False
     if tags.get('area') == 'yes' or tags.get('access') in ('private', 'no'):
         return False
+    if h == 'service' and tags.get('service', 'alley') != 'alley':
+        return False  # keep ngõ (service=alley / untagged), drop driveways and parking aisles
+    return True
+
+
+def road_class(tags):
+    h = tags['highway'].replace('_link', '')
+    if h in ('living_street', 'service'):
+        return 'alley'
     if h == 'residential':
         name = (tags.get('name') or '').strip().lower()
         if not name or name.startswith(ALLEY_PREFIX):
-            return False  # skip unnamed alleys (ngo/ngach) to keep the graph tractable
+            return 'alley'  # ngõ / ngách / unnamed lanes: narrow, motorbike-heavy, slow
+    return h
     return True
 
 
@@ -162,7 +172,7 @@ def write_sumo_osm(nodes, ways, road_ids):
 
 
 def lanes_of(tags, oneway):
-    h = tags['highway'].replace('_link', '')
+    h = road_class(tags)
     try:
         total = int(float(tags.get('lanes', '').split(';')[0]))
     except ValueError:
@@ -184,7 +194,7 @@ def lanes_of(tags, oneway):
 
 
 def speed_of(tags):
-    h = tags['highway'].replace('_link', '')
+    h = road_class(tags)
     try:
         return float(tags.get('maxspeed', '').split()[0])
     except (ValueError, IndexError):
@@ -240,7 +250,7 @@ def build(nodes, ways):
     for wid, rs in segs:
         a, b = rs[0], rs[-1]
         deg_ok = use[a] >= 3 and use[b] >= 3  # both are real intersections
-        if a != b and deg_ok and seglen(rs) < MERGE_DIST:
+        if a != b and deg_ok and road_class(ways[wid][1]) != 'alley' and seglen(rs) < MERGE_DIST:
             pa, pb = find(a), find(b)
             if pa != pb:
                 parent[pa] = pb
@@ -270,7 +280,10 @@ def build(nodes, ways):
         rev = ow == '-1'
         fw, bw = lanes_of(tags, oneway)
         sp = speed_of(tags)
-        base = {'name': tags.get('name', ''), 'cls': tags['highway'].replace('_link', ''), 'speed': sp, 'way': int(wid)}
+        inf = [k for k, t in (('lanes', 'lanes'), ('speed', 'maxspeed')) if t not in tags]
+        if not oneway and 'oneway' not in tags:
+            inf.append('oneway')
+        base = {'name': tags.get('name', ''), 'cls': road_class(tags), 'speed': sp, 'way': int(wid), 'inf': inf}
         if rev:
             links.append(dict(base, frm=b, to=a, pts=pts[::-1], lanes=fw))
         else:
@@ -287,6 +300,69 @@ def build(nodes, ways):
         seen.add(k); uniq.append(l)
     links = uniq
 
+    # prune dead-end ngõ/ngách trees: their length becomes household demand ("hh", metres of
+    # alley frontage) at the node where the tree joins the through network (inferred OD zones)
+    hh = defaultdict(float)
+    while True:
+        und = defaultdict(set); inc = defaultdict(list)
+        for i, l in enumerate(links):
+            und[l['frm']].add(l['to']); und[l['to']].add(l['frm'])
+            inc[l['frm']].append(i); inc[l['to']].append(i)
+        kill = set()
+        for v, nb in und.items():
+            if len(nb) == 1 and all(links[i]['cls'] == 'alley' for i in inc[v]):
+                u = next(iter(nb))
+                if u in kill:
+                    continue
+                seg = max(sum(math.dist(links[i]['pts'][k], links[i]['pts'][k + 1]) for k in range(len(links[i]['pts']) - 1)) for i in inc[v])
+                hh[u] += seg + hh.pop(v, 0.0)
+                kill.add(v)
+        if not kill:
+            break
+        links = [l for l in links if l['frm'] not in kill and l['to'] not in kill]
+
+    # collapse degree-2 alley chain nodes (pure geometry) to keep the routing graph small
+    changed = True
+    while changed:
+        changed = False
+        und = defaultdict(set); inc = defaultdict(list)
+        for i, l in enumerate(links):
+            und[l['frm']].add(l['to']); und[l['to']].add(l['frm'])
+            inc[l['frm']].append(i); inc[l['to']].append(i)
+        pairs = {(l['frm'], l['to']) for l in links}
+        dead = set(); new_links = []; touched = set()
+        for v, nb in und.items():
+            if len(nb) != 2 or hh.get(v) or v in touched:
+                continue
+            ls = [links[i] for i in inc[v]]
+            if any(l['cls'] != 'alley' for l in ls) or any(i in dead for i in inc[v]):
+                continue
+            a, b = sorted(nb)
+            if a in touched or b in touched or (a, b) in pairs or (b, a) in pairs:
+                continue
+            def find_l(f, t):
+                for i in inc[v]:
+                    if links[i]['frm'] == f and links[i]['to'] == t:
+                        return i
+                return None
+            ok = True; made = []
+            for f, t in ((a, b), (b, a)):
+                i1, i2 = find_l(f, v), find_l(v, t)
+                if (i1 is None) != (i2 is None):
+                    ok = False; break
+                if i1 is not None:
+                    made.append((i1, i2))
+            if not ok or not made:
+                continue
+            w = min(links[i]['way'] for i in inc[v])
+            for i1, i2 in made:
+                l1, l2 = links[i1], links[i2]
+                new_links.append(dict(l1, to=l2['to'], pts=l1['pts'] + l2['pts'][1:], way=w,
+                                      name=l1['name'] or l2['name'], lanes=min(l1['lanes'], l2['lanes']), speed=min(l1['speed'], l2['speed'])))
+                dead.add(i1); dead.add(i2)
+            touched.update((v, a, b)); changed = True
+        links = [l for i, l in enumerate(links) if i not in dead] + new_links
+
     # boundary nodes: endpoints whose original way continued outside the bbox
     boundary = set()
     for wid, rs in runs:
@@ -294,8 +370,9 @@ def build(nodes, ways):
         for end in (rs[0], rs[-1]):
             idx = refs.index(end)
             nb = [refs[j] for j in (idx - 1, idx + 1) if 0 <= j < len(refs)]
-            if any(n in nodes and not inside(nodes[n][0], nodes[n][1]) for n in nb):
-                boundary.add(cid[end])
+            if ways[wid][1].get('highway') not in ('residential', 'living_street', 'service') or road_class(ways[wid][1]) != 'alley':
+                if any(n in nodes and not inside(nodes[n][0], nodes[n][1]) for n in nb):
+                    boundary.add(cid[end])
 
     # dead ends close to the bbox edge are also network entries/exits
     und = defaultdict(set)
@@ -303,7 +380,7 @@ def build(nodes, ways):
         und[l['frm']].add(l['to']); und[l['to']].add(l['frm'])
     xmin, ymax = proj(S, W); xmax, ymin = proj(N, E)
     for v, nb in und.items():
-        if len(nb) == 1:
+        if len(nb) == 1 and not all(l['cls'] == 'alley' for l in links if l['frm'] == v or l['to'] == v):
             x, y = cnodes[v]['x'], cnodes[v]['y']
             if min(x - xmin, xmax - x, y - ymin, ymax - y) < 90:
                 boundary.add(v)
@@ -358,7 +435,8 @@ def build(nodes, ways):
     signal = set()
     deg = defaultdict(set)
     for l in links:
-        deg[l['frm']].add(l['to']); deg[l['to']].add(l['frm'])
+        if l['cls'] != 'alley':
+            deg[l['frm']].add(l['to']); deg[l['to']].add(l['frm'])
     for r in sig_nodes:
         p = proj(nodes[r][0], nodes[r][1])
         best, bd = None, SIGNAL_SNAP
@@ -375,12 +453,52 @@ def build(nodes, ways):
     for v in keepn:
         n = cnodes[v]
         out_nodes.append({'id': remap[v], 'x': n['x'], 'y': n['y'], 'lat': n['lat'], 'lon': n['lon'],
-                          'signal': v in signal, 'boundary': v in boundary, 'osm': n['osm'][:6]})
+                          'signal': v in signal, 'boundary': v in boundary, 'osm': n['osm'][:6],
+                          'hh': round(hh.get(v, 0.0))})
     out_links = []
     for i, l in enumerate(links):
         L = sum(math.dist(l['pts'][k], l['pts'][k + 1]) for k in range(len(l['pts']) - 1))
         out_links.append({'id': i, 'from': remap[l['frm']], 'to': remap[l['to']], 'pts': l['pts'], 'len': round(L, 2),
-                          'lanes': max(1, int(l['lanes'])), 'speed': l['speed'], 'name': l['name'], 'cls': l['cls'], 'way': l['way']})
+                          'lanes': max(1, int(l['lanes'])), 'speed': l['speed'], 'name': l['name'], 'cls': l['cls'], 'way': l['way'], 'inf': l.get('inf', [])})
+
+    # bus stops and zebra crossings snapped onto links (s along link, side of road)
+    def project(p, l):
+        best = (1e9, 0, 0)
+        acc = 0.0
+        for k in range(len(l['pts']) - 1):
+            a, b = l['pts'][k], l['pts'][k + 1]
+            dx, dy = b[0] - a[0], b[1] - a[1]; L2 = dx * dx + dy * dy or 1
+            u = max(0, min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L2))
+            qx, qy = a[0] + u * dx, a[1] + u * dy; d = math.dist(p, (qx, qy))
+            side = (dx * (p[1] - a[1]) - dy * (p[0] - a[0]))  # >0: right of travel direction (y down)
+            if d < best[0]:
+                best = (d, acc + u * math.sqrt(L2), side)
+            acc += math.sqrt(L2)
+        return best
+    stops = []
+    for r, (lat, lon, t) in nodes.items():
+        if not inside(lat, lon) or not (t.get('highway') == 'bus_stop' or (t.get('public_transport') == 'platform' and t.get('bus') == 'yes')):
+            continue
+        p = proj(lat, lon); cand = []
+        for l in out_links:
+            if l['cls'] == 'alley':
+                continue
+            d, sv, side = project(p, l)
+            if d < 30 and side >= 0 and 15 < sv < l['len'] - 20:
+                cand.append((d, l['id'], sv))
+        if cand:
+            d, lid, sv = min(cand)
+            if not any(st['link'] == lid and abs(st['s'] - sv) < 30 for st in stops):
+                stops.append({'link': lid, 's': round(sv, 1), 'name': t.get('name', 'Điểm dừng xe buýt'), 'osm': int(r)})
+    crossings = []
+    for r, (lat, lon, t) in nodes.items():
+        if not inside(lat, lon) or t.get('highway') != 'crossing':
+            continue
+        p = proj(lat, lon)
+        for l in out_links:
+            d, sv, side = project(p, l)
+            if d < 9 and 4 < sv < l['len'] - 4 and l['cls'] != 'alley':
+                crossings.append({'link': l['id'], 's': round(sv, 1), 'signal': t.get('crossing') == 'traffic_signals', 'osm': int(r)})
 
     # buildings (visual only), simplified
     blds = []
@@ -406,12 +524,13 @@ def build(nodes, ways):
             'bbox': [S, W, N, E], 'origin': [LAT0, LON0],
             'attribution': '© OpenStreetMap contributors, ODbL 1.0 (https://www.openstreetmap.org/copyright)',
             'source': 'OpenStreetMap (OSM API 0.6 / Overpass)', 'generated': time.strftime('%Y-%m-%d'),
-            'filters': 'trunk/primary/secondary/tertiary/unclassified + named residential (no ngõ/ngách)',
+            'filters': 'trunk/primary/secondary/tertiary/unclassified/residential + ngõ/ngách/living_street as cls=alley (15 km/h, 1 lane)',
             'counts': {'nodes': len(out_nodes), 'links': len(out_links), 'signals': sum(n['signal'] for n in out_nodes),
                        'boundary': sum(n['boundary'] for n in out_nodes), 'buildings': len(blds),
-                       'signal_nodes_osm': len(sig_nodes)},
+                       'signal_nodes_osm': len(sig_nodes), 'bus_stops': len(stops), 'crossings': len(crossings),
+                       'alley_links': sum(1 for l in out_links if l['cls'] == 'alley'), 'zones': sum(1 for n in out_nodes if n['hh'] >= 40), 'hh_m': round(sum(n['hh'] for n in out_nodes))},
         },
-        'nodes': out_nodes, 'links': out_links, 'buildings': blds,
+        'nodes': out_nodes, 'links': out_links, 'buildings': blds, 'busStops': stops, 'crossings': crossings,
     }
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     with open(OUT, 'w', encoding='utf-8') as f:

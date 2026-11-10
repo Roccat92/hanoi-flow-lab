@@ -86,7 +86,7 @@ function nodeInfo(id: number): NodeInfo {
 function vehInfo(id: number) {
   const v = sim.allVehicles().find(x => x.id === id); if (!v) return null;
   const L = sim.net.links[v.mv >= 0 ? sim.net.moves[v.mv].inL : v.link];
-  const route: string[] = []; let c = v.mv >= 0 ? sim.net.moves[v.mv].outL : v.link; const tab = sim.tables.get(v.dest)!; let g = 0;
+  const route: string[] = []; let c = v.mv >= 0 ? sim.net.moves[v.mv].outL : v.link; const tab = sim.table(v.dest, v.cls); let g = 0;
   while (c >= 0 && g++ < 40) { const nm = sim.net.links[c].name; if (route[route.length - 1] !== nm) route.push(nm); if (c === v.dest) break; c = tab.next[c]; }
   const vmaxL = sim.net.links[v.link];
   return { id: v.id, type: VTYPES[v.type].name, speedKmh: v.v * 3.6, link: L.name, next: v.next >= 0 ? sim.net.links[v.next].name : 'Điểm đến', dest: sim.net.links[v.dest].name,

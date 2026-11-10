@@ -6,7 +6,7 @@ import { makeTextures, type VehTextures } from './sprites';
 import { VSTRIDE, type Snapshot } from '../sim/protocol';
 
 export interface Layers { heat: boolean; density: boolean; signals: boolean; ai: boolean; night: boolean; light: boolean }
-const VDIM = [[0.8, 1.9], [1.8, 4.5], [2.5, 11], [2.3, 7.5]];
+const VDIM = [[0.8, 1.9], [1.8, 4.5], [2.5, 11], [2.3, 7.5], [0.6, 1.75], [1.75, 4.4], [1.95, 5.2], [1.9, 4.8]];
 
 export class MapView {
   app = new Application(); world = new Container(); mapSprite = new Sprite(); overlay = new Graphics(); sigG = new Graphics();
@@ -168,12 +168,12 @@ export class MapView {
         sp.tint = r > 0.6 ? 0x2ecc71 : r > 0.3 ? 0xf1c40f : r > 0.08 ? 0xe67e22 : 0xff3b30;
         sp.width = sp.height = Math.max(1.6, 2.2 / z); sp.rotation = 0;
       } else {
-        const set = type === 0 ? this.tex.moto : type === 1 ? this.tex.car : type === 2 ? this.tex.bus : this.tex.truck;
+        const set = this.tex.byType[type] ?? this.tex.car;
         sp.texture = set[id % set.length]; sp.tint = 0xffffff;
         sp.width = VDIM[type][0]; sp.height = VDIM[type][1]; sp.rotation = v[o + 2] + Math.PI / 2;
       }
       sp.position.set(v[o], v[o + 1]);
-      if (night) { const gl = this.glows[i]; gl.position.set(v[o] + Math.cos(v[o + 2]) * VDIM[type][1] / 2, v[o + 1] + Math.sin(v[o + 2]) * VDIM[type][1] / 2); gl.rotation = v[o + 2] + Math.PI / 2; gl.width = type === 0 ? 2.5 : 4; gl.height = type === 0 ? 5 : 9; }
+      if (night) { const gl = this.glows[i]; gl.position.set(v[o] + Math.cos(v[o + 2]) * VDIM[type][1] / 2, v[o + 1] + Math.sin(v[o + 2]) * VDIM[type][1] / 2); gl.rotation = v[o + 2] + Math.PI / 2; const two = type === 0 || type === 4; gl.width = two ? 2.5 : 4; gl.height = two ? 5 : 9; gl.visible = type !== 4 || false; }
     }
     // selection ring
     this.selG.clear();

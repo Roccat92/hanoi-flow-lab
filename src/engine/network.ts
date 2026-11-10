@@ -1,13 +1,14 @@
-import type { MapData } from './types';
+import type { Edits, MapData } from './types';
 
 export const LANE_W = 3.2;
-const RANK: Record<string, number> = { trunk: 5, primary: 4, secondary: 3, tertiary: 2, unclassified: 1, residential: 1 };
+const RANK: Record<string, number> = { trunk: 5, primary: 4, secondary: 3, tertiary: 2, unclassified: 1, residential: 1, alley: 0 };
 
 export interface Link {
   id: number; from: number; to: number; pts: [number, number][]; cum: number[]; len: number;
   lanes: number; width: number; vmax: number; name: string; cls: string; rank: number; twoWay: boolean;
   stopS: number; startS: number; headIn: number; headOut: number;
   outMoves: number[]; inMoves: number[];
+  closed: boolean; alley: boolean; carOk: boolean; heavyOk: boolean; twin: number; inf: string[];
 }
 export type Turn = 'L' | 'T' | 'R' | 'U';
 export interface Movement {
@@ -17,7 +18,7 @@ export interface Movement {
 export interface Phase { moves: number[]; protected: Set<number>; permissive: Set<number>; inLinks: number[]; label: string; pedOnly: boolean }
 export interface Node {
   id: number; x: number; y: number; signal: boolean; boundary: boolean; radius: number;
-  inLinks: number[]; outLinks: number[]; moves: number[]; phases: Phase[]; name: string; deg: number;
+  inLinks: number[]; outLinks: number[]; moves: number[]; phases: Phase[]; name: string; deg: number; hh: number; osmSignal: boolean;
 }
 
 export function angDiff(a: number, b: number) { let d = b - a; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return d; }
@@ -27,10 +28,11 @@ export class Network {
   sources: number[] = []; sinks: number[] = []; // link ids
   bounds = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
 
-  constructor(public data: MapData) {
+  constructor(public data: MapData, public edits: Edits = {}) {
     const und = new Map<number, Set<number>>();
     for (const n of data.nodes) {
-      this.nodes.push({ id: n.id, x: n.x, y: n.y, signal: n.signal, boundary: n.boundary, radius: 0, inLinks: [], outLinks: [], moves: [], phases: [], name: '', deg: 0 });
+      const ne = edits.nodes?.[n.id];
+      this.nodes.push({ id: n.id, x: n.x, y: n.y, signal: ne?.signal ?? n.signal, osmSignal: n.signal, boundary: n.boundary, radius: 0, inLinks: [], outLinks: [], moves: [], phases: [], name: '', deg: 0, hh: n.hh ?? 0 });
       und.set(n.id, new Set());
     }
     const pairs = new Set<string>();
@@ -42,10 +44,16 @@ export class Network {
       const len = cum[cum.length - 1];
       const n = pts.length;
       const twoWay = pairs.has(ml.to + '_' + ml.from + '_' + (ml as any).way);
+      const le = edits.links?.[ml.id];
+      const alley = ml.cls === 'alley';
+      const lanes = Math.max(1, Math.min(6, le?.lanes ?? ml.lanes));
+      // ngõ: one narrow lane per direction (2.3 m each way, 3 m if one-way); main roads 3.2 m per lane
+      const width = alley ? (twoWay ? 2.3 : 3.0) * lanes : Math.max(lanes * LANE_W, 3.6);
       const L: Link = {
-        id: ml.id, from: ml.from, to: ml.to, pts, cum, len, lanes: ml.lanes,
-        width: Math.max(ml.lanes * LANE_W, 3.6), vmax: ml.speed / 3.6, name: ml.name || 'Đường không tên', cls: ml.cls,
+        id: ml.id, from: ml.from, to: ml.to, pts, cum, len, lanes,
+        width, vmax: (le?.speed ?? ml.speed) / 3.6, name: ml.name || (alley ? 'Ngõ không tên' : 'Đường không tên'), cls: ml.cls,
         rank: RANK[ml.cls] ?? 1, twoWay, stopS: len, startS: 0,
+        closed: !!le?.closed, alley, carOk: width >= 2.2, heavyOk: !alley, twin: -1, inf: ml.inf ?? [],
         headOut: Math.atan2(pts[1][1] - pts[0][1], pts[1][0] - pts[0][0]),
         headIn: Math.atan2(pts[n - 1][1] - pts[n - 2][1], pts[n - 1][0] - pts[n - 2][0]),
         outMoves: [], inMoves: [],
@@ -55,6 +63,9 @@ export class Network {
       this.nodes[ml.to].inLinks.push(L.id);
       und.get(ml.from)!.add(ml.to); und.get(ml.to)!.add(ml.from);
     }
+    const byPair = new Map<string, number>();
+    for (const L of this.links) byPair.set(L.from + '_' + L.to, L.id);
+    for (const L of this.links) L.twin = byPair.get(L.to + '_' + L.from) ?? -1;
     for (const nd of this.nodes) {
       nd.deg = und.get(nd.id)!.size;
       let maxW = 0;
@@ -74,8 +85,8 @@ export class Network {
     this.buildPhases();
     for (const nd of this.nodes) {
       if (!nd.boundary) continue;
-      for (const l of nd.outLinks) this.sources.push(l);
-      for (const l of nd.inLinks) this.sinks.push(l);
+      for (const l of nd.outLinks) if (!this.links[l].closed) this.sources.push(l);
+      for (const l of nd.inLinks) if (!this.links[l].closed) this.sinks.push(l);
     }
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const n of this.nodes) { minX = Math.min(minX, n.x); minY = Math.min(minY, n.y); maxX = Math.max(maxX, n.x); maxY = Math.max(maxY, n.y); }
@@ -102,12 +113,15 @@ export class Network {
 
   private buildMoves() {
     const tmp = { x: 0, y: 0, h: 0 };
+    const bans = new Set(this.edits.bans ?? []);
     for (const nd of this.nodes) {
       for (const li of nd.inLinks) {
         const inL = this.links[li];
+        if (inL.closed) continue;
         const cands: { o: number; turn: Turn; a: number }[] = [];
         for (const lo of nd.outLinks) {
           const outL = this.links[lo];
+          if (outL.closed || bans.has(li + '_' + lo)) continue;
           const a = angDiff(inL.headIn, outL.headOut);
           let turn: Turn = Math.abs(a) < 0.6 ? 'T' : a > 0 ? 'R' : 'L';
           if (Math.abs(a) > 2.6 || outL.to === inL.from) turn = 'U';
@@ -137,8 +151,9 @@ export class Network {
 
   private buildPhases() {
     for (const nd of this.nodes) {
-      if (!nd.signal || nd.inLinks.length < 1) { nd.signal = false; continue; }
-      const ins = nd.inLinks.map(l => this.links[l]);
+      const live = nd.inLinks.filter(l => this.links[l].outMoves.length);
+      if (!nd.signal || live.length < 1 || nd.boundary) { nd.signal = false; continue; }
+      const ins = live.map(l => this.links[l]);
       const ref = [...ins].sort((a, b) => b.rank * b.lanes - a.rank * a.lanes)[0];
       const axis = (h: number) => { let d = Math.abs(angDiff(ref.headIn, h)); if (d > Math.PI / 2) d = Math.PI - d; return d < Math.PI / 4 ? 0 : 1; };
       const groups: number[][] = [[], []];

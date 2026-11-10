@@ -1,13 +1,25 @@
-export interface MapNode { id: number; x: number; y: number; lat: number; lon: number; signal: boolean; boundary: boolean; osm: number[] }
-export interface MapLink { id: number; from: number; to: number; pts: [number, number][]; len: number; lanes: number; speed: number; name: string; cls: string; way: number }
+export interface MapNode { id: number; x: number; y: number; lat: number; lon: number; signal: boolean; boundary: boolean; osm: number[]; hh?: number /* metres of pruned dead-end ngõ frontage (inferred local demand) */ }
+export interface MapLink { id: number; from: number; to: number; pts: [number, number][]; len: number; lanes: number; speed: number; name: string; cls: string; way: number; inf?: string[] /* attributes inferred from defaults, not tagged in OSM */ }
 export interface MapData {
   meta: { area: string; bbox: number[]; origin: number[]; attribution: string; source: string; generated: string; counts: Record<string, number> };
   nodes: MapNode[]; links: MapLink[]; buildings: { p: number[]; l: number }[];
+  busStops?: { link: number; s: number; name: string; osm: number }[];
+  crossings?: { link: number; s: number; signal: boolean; osm: number }[];
 }
 
 export type ControllerKind = 'fixed' | 'actuated' | 'ai';
 export type ScenarioKind = 'normal' | 'morning' | 'evening' | 'extreme' | 'incident' | 'rain' | 'event';
-export type VType = 0 | 1 | 2 | 3; // 0 motorbike, 1 car, 2 bus, 3 truck
+export type VType = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7; // 0 motorbike, 1 car, 2 bus, 3 truck, 4 bicycle, 5 taxi, 6 van, 7 SUV
+
+/** User edits from the map editor. Applied on top of the OSM network before every run. */
+export interface Edits {
+  name?: string;
+  nodes?: Record<number, { signal?: boolean; cycle?: number; splits?: number[]; offset?: number }>;
+  links?: Record<number, { lanes?: number; speed?: number; closed?: boolean }>;
+  bans?: string[]; // "inLink_outLink" movements forbidden (turn bans)
+  zones?: Record<number, number>; // zone representative node -> demand multiplier
+  violations?: number; // multiplier on rule-violation propensity (0 = none)
+}
 
 export interface SimConfig {
   seed: number;
@@ -16,6 +28,7 @@ export interface SimConfig {
   demandScale: number; // multiplies scenario demand
   dt: number;
   maxVehicles?: number; // safety cap on active vehicles (spawns wait in entry queues beyond it)
+  edits?: Edits;
 }
 
 export interface Metrics {
@@ -35,6 +48,10 @@ export interface Metrics {
   co2kgH: number; // rough estimate
   pedWaitS: number;
   maxQueue: number;
+  violations?: number; // red-light / box rule violations committed (never with a conflict present)
+  busDwellS?: number;
+  pedCrossed?: number;
+  localTrips?: number;
 }
 
 export interface DecisionLog { t: number; node: number; from: number; to: number; kind: 'switch' | 'hold' | 'force'; text: string; values: Record<string, number> }

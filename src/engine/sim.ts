@@ -1,7 +1,7 @@
 import { Network, cubicAt, type Link, type Movement, type Node } from './network';
 import { Router, type RouteTable } from './routing';
 import { Rng } from './rng';
-import { SCENARIOS, VTYPES, type Scenario } from './scenarios';
+import { SCENARIOS, VTYPES, fullMix, LOCAL_MIX, LOCAL_SHARE, type Scenario } from './scenarios';
 import { makeController, FixedTime, SAFETY, type Controller, type PhaseObs, type SignalState } from './controllers';
 import type { DecisionLog, MapData, Metrics, SimConfig, VType } from './types';
 
@@ -10,10 +10,12 @@ export class Veh {
   link = -1; mv = -1; s = 0; v = 0; acc = 0; lat = 0; latT = 0; latFrac = 0.5;
   dest = -1; next = -1; tCreate = 0; tEnter = 0; ff = 0; stops = 0; stopped = false; stopT = 0; waitTotal = 0;
   committed = false; resMv = -1; lcT = 0; obstacle = false; lim = Infinity; dist = 0;
+  tw = false; cls = 1; vcap = 99; local = false; dwellUntil = -1; servedStop = -1; rude = 0; violated = false;
   gx0 = 0; gy0 = 0; gh0 = 0; gx3 = 0; gy3 = 0; gh3 = 0; // movement geometry
 }
 
-interface Source { link: number; rate: number; nextT: number; queue: Veh[]; west: boolean }
+interface Source { link: number; rate: number; nextT: number; queue: Veh[]; west: boolean; local: boolean; zone: number }
+export interface Zone { node: number; w: number; src: number; sink: number }
 const ZONE = 14;
 const MAXLEN = 18; // longest body (incident obstacle); used to bound leader scans // metres at link entry used for spill-back (don't block the box) checks
 const tmp = { x: 0, y: 0, h: 0 };
@@ -24,6 +26,8 @@ export class Simulation {
   linkV: Veh[][]; mvV: Veh[][];
   tailOcc: Float64Array; linkSpeed: Float64Array; linkPcu: Float64Array;
   sinks!: number[]; sinkW!: number[]; tables = new Map<number, RouteTable>(); ffTables = new Map<number, RouteTable>();
+  zones: Zone[] = []; zoneW: number[] = []; parkEnd: Uint8Array; localTrips = 0; violations = 0;
+  private costs: Float64Array[] = []; private ffCosts: Float64Array[] = [];
   sources: Source[] = []; sig = new Map<number, SignalState>(); pedMin = new Map<number, number[]>();
   moveOf = new Map<number, number>(); goCache: Int32Array; goStamp: Int32Array; resv: Int32Array;
   log: DecisionLog[] = []; series: Metrics[] = [];
@@ -34,15 +38,16 @@ export class Simulation {
   private lastObs = new Map<number, PhaseObs[]>();
 
   constructor(data: MapData, public cfg: SimConfig) {
-    this.net = new Network(data); this.router = new Router(this.net); this.rng = new Rng(cfg.seed);
-    this.sc = SCENARIOS[cfg.scenario]; this.ctrl = makeController(cfg.controller);
+    this.net = new Network(data, cfg.edits ?? {}); this.router = new Router(this.net); this.rng = new Rng(cfg.seed);
+    this.sc = SCENARIOS[cfg.scenario]; this.mix = fullMix(this.sc.mix); this.ctrl = makeController(cfg.controller);
     const nL = this.net.links.length, nM = this.net.moves.length;
     this.linkV = Array.from({ length: nL }, () => []); this.mvV = Array.from({ length: nM }, () => []);
     this.tailOcc = new Float64Array(nL); this.linkSpeed = new Float64Array(nL); this.linkPcu = new Float64Array(nL);
+    this.parkEnd = new Uint8Array(nL);
     this.goCache = new Int32Array(nM); this.goStamp = new Int32Array(nM).fill(-1); this.resv = new Int32Array(nM);
     for (const m of this.net.moves) this.moveOf.set(m.inL * 65536 + m.outL, m.id);
     for (const L of this.net.links) this.linkSpeed[L.id] = L.vmax;
-    this.setupEvent(); this.setupSinks(); this.setupSignals(); this.setupSources(); this.setupIncident();
+    this.setupEvent(); this.setupZones(); this.setupSinks(); this.setupSignals(); this.setupSources(); this.setupIncident();
   }
 
   // ---------------------------------------------------------------- setup
@@ -55,27 +60,73 @@ export class Simulation {
     for (const n of this.net.nodes) { if (n.boundary || n.inLinks.length === 0) continue; const d = Math.hypot(n.x - x, n.y - y); if (d < bd) { bd = d; best = n.id; } }
     this.eventNode = best; this.eventLinks = this.net.nodes[best].inLinks.slice();
   }
+  /** inferred local OD zones: households along pruned dead-end ngõ, aggregated per 300 m cell */
+  private setupZones() {
+    const CELL = 300; const cells = new Map<string, { best: Node; w: number }>();
+    for (const n of this.net.nodes) {
+      if (n.hh < 40 || n.boundary) continue;
+      const k = Math.floor(n.x / CELL) + '_' + Math.floor(n.y / CELL);
+      const c = cells.get(k); if (!c) { cells.set(k, { best: n, w: n.hh }); continue; }
+      c.w += n.hh; if (n.hh > c.best.hh) c.best = n;
+    }
+    const pickL = (ids: number[], moves: (L: Link) => number[]) => {
+      const ok = ids.filter(l => !this.net.links[l].closed && moves(this.net.links[l]).length);
+      ok.sort((a, b) => (+this.net.links[b].alley - +this.net.links[a].alley) || a - b);
+      return ok.length ? ok[0] : -1;
+    };
+    for (const c of cells.values()) {
+      const n = c.best; const mult = this.cfg.edits?.zones?.[n.id] ?? 1; if (mult <= 0) continue;
+      const src = pickL(n.outLinks, L => L.outMoves), sink = pickL(n.inLinks, L => L.inMoves);
+      if (src < 0 || sink < 0) continue;
+      this.zones.push({ node: n.id, w: c.w * mult, src, sink });
+    }
+    this.zoneW = this.zones.map(z => z.w);
+    for (const z of this.zones) this.parkEnd[z.sink] = 1;
+  }
   private setupSinks() {
     const bias = this.sc.inboundBias;
-    this.sinks = [...this.net.sinks, ...this.eventLinks];
+    this.sinks = this.net.sinks.filter(l => this.net.links[l].inMoves.length);
     this.sinkW = this.sinks.map(l => {
       const L = this.net.links[l];
-      if (this.eventLinks.includes(l)) return 0; // event trips are drawn separately
       const east = this.net.nodes[L.to].x > 0;
-      return L.rank * L.lanes * (east ? bias : 1 / bias);
+      return Math.max(0.3, L.rank) * L.lanes * (east ? bias : 1 / bias);
     });
-    const ff = new Float64Array(this.net.links.length);
-    for (const L of this.net.links) ff[L.id] = L.len / L.vmax;
-    for (const d of this.sinks) {
-      this.ffTables.set(d, this.router.tableTo(d, ff, m => this.net.moves[m].len / this.net.links[this.net.moves[m].outL].vmax));
-    }
+    for (const l of this.eventLinks) this.parkEnd[l] = 1;
+    // per-class free-flow link costs: 0 two-wheelers, 1 cars (ngõ discouraged, too-narrow ngõ forbidden), 2 heavy (main roads only)
+    for (let c = 0; c < 3; c++) this.ffCosts.push(this.classCost(c, L => L.len / L.vmax));
     this.refreshRoutes();
   }
-  refreshRoutes() {
+  private classCost(c: number, base: (L: Link) => number) {
     const cost = new Float64Array(this.net.links.length);
-    for (const L of this.net.links) cost[L.id] = L.len / Math.max(1, Math.min(L.vmax, this.linkSpeed[L.id]));
-    const turn = (mi: number) => { const m = this.net.moves[mi]; const n = this.net.nodes[m.node]; return (n.signal ? 12 : 2) + (m.turn === 'L' ? 6 : m.turn === 'U' ? 20 : 0); };
-    for (const d of this.sinks) this.tables.set(d, this.router.tableTo(d, cost, turn));
+    for (const L of this.net.links) {
+      let k = base(L);
+      if (L.alley) { if (c === 2 || (c === 1 && !L.carOk)) k = Infinity; else if (c === 1) k *= 3; }
+      cost[L.id] = k;
+    }
+    return cost;
+  }
+  private turnCost(mi: number, ff: boolean) {
+    const m = this.net.moves[mi]; const n = this.net.nodes[m.node];
+    const fromAlley = this.net.links[m.inL].alley && !this.net.links[m.outL].alley ? 4 : 0; // ngõ exit friction
+    if (ff) return m.len / this.net.links[m.outL].vmax + fromAlley;
+    return (n.signal ? 12 : 2) + (m.turn === 'L' ? 6 : m.turn === 'U' ? 20 : 0) + fromAlley;
+  }
+  private tcFF?: Float64Array; private tcDyn?: Float64Array;
+  ffTable(d: number, c: number) {
+    const k = d * 3 + c; let t = this.ffTables.get(k);
+    if (!t) { this.tcFF ??= Float64Array.from(this.net.moves, (_, i) => this.turnCost(i, true)); t = this.router.tableTo(d, this.ffCosts[c], this.tcFF); this.ffTables.set(k, t); }
+    return t;
+  }
+  table(d: number, c: number) {
+    const k = d * 3 + c; let t = this.tables.get(k);
+    if (!t) { this.tcDyn ??= Float64Array.from(this.net.moves, (_, i) => this.turnCost(i, false)); t = this.router.tableTo(d, this.costs[c], this.tcDyn); this.tables.set(k, t); }
+    return t;
+  }
+  refreshRoutes() {
+    this.costs = [0, 1, 2].map(c => this.classCost(c, L => L.len / Math.max(1, Math.min(L.vmax, this.linkSpeed[L.id]))));
+    const keys = [...this.tables.keys()].sort((a, b) => a - b);
+    this.tcDyn ??= Float64Array.from(this.net.moves, (_, i) => this.turnCost(i, false));
+    for (const k of keys) this.tables.set(k, this.router.tableTo(Math.floor(k / 3), this.costs[k % 3], this.tcDyn));
   }
   private setupSignals() {
     for (const n of this.net.nodes) {
@@ -96,13 +147,19 @@ export class Simulation {
   }
   private setupSources() {
     const bias = this.sc.inboundBias;
-    const src = this.net.sources.map(l => { const L = this.net.links[l]; const west = this.net.nodes[L.from].x <= 0; return { l, w: L.rank * L.lanes * (west ? bias : 1 / bias), west }; });
+    const src = this.net.sources.filter(l => this.net.links[l].outMoves.length).map(l => { const L = this.net.links[l]; const west = this.net.nodes[L.from].x <= 0; return { l, w: Math.max(0.3, L.rank) * L.lanes * (west ? bias : 1 / bias), west }; });
     const tot = src.reduce((a, s) => a + s.w, 0);
     const vph = this.sc.demandVph * this.cfg.demandScale;
+    const share = this.zones.length ? LOCAL_SHARE : 0;
     for (const s of src) {
-      const rate = vph * s.w / tot / 3600;
-      this.sources.push({ link: s.l, rate, nextT: this.rng.exp(rate), queue: [], west: s.west });
+      const rate = vph * (1 - share) * s.w / tot / 3600;
+      this.sources.push({ link: s.l, rate, nextT: this.rng.exp(rate), queue: [], west: s.west, local: false, zone: -1 });
     }
+    const zt = this.zoneW.reduce((a, b) => a + b, 0);
+    this.zones.forEach((z, i) => {
+      const rate = vph * share * z.w / zt / 3600;
+      this.sources.push({ link: z.src, rate, nextT: this.rng.exp(rate), queue: [], west: this.net.nodes[z.node].x <= 0, local: true, zone: i });
+    });
   }
   private setupIncident() {
     if (!this.sc.incident) return;
@@ -113,24 +170,34 @@ export class Simulation {
   }
 
   // ---------------------------------------------------------------- vehicles
-  private makeVeh(type: VType, src: number): Veh {
+  private makeVeh(type: VType, src: number, zone: number): Veh {
+    const L0 = this.net.links[src];
+    if (VTYPES[type].heavy && !L0.heavyOk) type = 1;
+    if (!VTYPES[type].tw && !L0.carOk) type = 0;
     const p = VTYPES[type]; const v = new Veh(); const sc = this.sc; const r = this.rng;
     v.id = this.nextId++; v.type = type; v.len = p.len; v.w = p.w; v.a = p.a * sc.accelFactor * r.range(0.85, 1.15);
     v.b = p.b; v.T = p.T * sc.headwayFactor * r.range(0.85, 1.2); v.s0 = p.s0; v.v0f = p.vf * sc.speedFactor * r.range(0.88, 1.1); v.pcu = p.pcu;
+    v.tw = p.tw; v.cls = p.tw ? 0 : p.heavy ? 2 : 1; v.vcap = p.vcap * (type === 4 ? r.range(0.8, 1.15) : 1); v.local = zone >= 0;
+    // propensity to break rules (two-wheelers, taxis); scaled by the editor setting
+    const vm = this.cfg.edits?.violations ?? 1;
+    v.rude = (p.tw && type === 0 ? (r.next() < 0.12 ? 1 : 0) : type === 5 ? (r.next() < 0.05 ? 1 : 0) : 0) * vm;
     v.tCreate = this.t;
-    // destination
-    let dest = -1;
+    // destination: boundary exits, local zones, or the event venue
+    let dest = -1; const c = v.cls;
+    const zoneP = c === 2 ? 0 : zone >= 0 ? 0.3 : 0.25;
     for (let tries = 0; tries < 12 && dest < 0; tries++) {
       let d: number;
-      if (this.eventLinks.length && r.next() < 3000 / (this.sc.demandVph * this.cfg.demandScale)) d = this.eventLinks[Math.floor(r.next() * this.eventLinks.length)];
+      if (this.eventLinks.length && c !== 2 && r.next() < 3000 / (this.sc.demandVph * this.cfg.demandScale)) d = this.eventLinks[Math.floor(r.next() * this.eventLinks.length)];
+      else if (this.zones.length && r.next() < zoneP) { const zi = r.pick(this.zones.map((_, i) => i), this.zoneW); if (zi === zone) continue; d = this.zones[zi].sink; }
       else d = r.pick(this.sinks, this.sinkW);
-      const ft = this.ffTables.get(d)!;
+      const ft = this.ffTable(d, c);
       if (!isFinite(ft.cost[src]) || this.net.links[d].to === this.net.links[src].from) continue;
       if (ft.cost[src] < 40) continue; // too short a trip
       dest = d; v.ff = ft.cost[src];
     }
-    if (dest < 0) { dest = this.sinks.find(d => isFinite(this.ffTables.get(d)!.cost[src]) && d !== src) ?? src; v.ff = this.ffTables.get(dest)!.cost[src]; }
+    if (dest < 0) { dest = this.sinks.find(d => d !== src && isFinite(this.ffTable(d, c).cost[src])) ?? src; v.ff = this.ffTable(dest, c).cost[src]; if (!isFinite(v.ff)) v.ff = 0; }
     v.dest = dest;
+    if (zone >= 0 || this.zones.some(z => z.sink === dest)) this.localTrips++;
     return v;
   }
   private spawnRate(): number { return 1; }
@@ -138,9 +205,9 @@ export class Simulation {
   private trySpawn(s: Source) {
     // generate arrivals (Poisson) into the entry queue; vehicles are never dropped
     while (s.nextT <= this.t) {
-      const r = this.rng.next(); const mix = this.sc.mix;
-      const type: VType = r < mix[0] ? 0 : r < mix[0] + mix[1] ? 1 : r < mix[0] + mix[1] + mix[2] ? 2 : 3;
-      s.queue.push(this.makeVeh(type, s.link)); this.spawned++;
+      const mix = s.local ? LOCAL_MIX : this.mix;
+      const type = this.rng.pick(MIXIDX, mix) as VType;
+      s.queue.push(this.makeVeh(type, s.link, s.zone)); this.spawned++;
       s.nextT += this.rng.exp(s.rate * this.spawnRate());
     }
     const cap = this.cfg.maxVehicles ?? Infinity;
@@ -148,10 +215,10 @@ export class Simulation {
     let guard = 0;
     while (s.queue.length && guard++ < 4 && this.activeCount < cap) {
       const v = s.queue[0];
-      const cand = v.type === 0 ? [0.2, 0.5, 0.8, 0.35, 0.65, 0.1, 0.9] : laneCenters(L);
+      const cand = v.tw ? [0.2, 0.5, 0.8, 0.35, 0.65, 0.1, 0.9] : laneCenters(L);
       let placed = false;
       for (const c of cand) {
-        const lat = v.type === 0 ? clampLat(L, v, c * L.width) : c;
+        const lat = v.tw ? clampLat(L, v, c * L.width) : c;
         const front = v.len + 0.2;
         let ok = true;
         for (let i = list.length - 1; i >= 0; i--) { const o = list[i]; if (o.s - MAXLEN > front + 3 + o.v * 0.8) break; if (o.s - o.len < front + 3 + o.v * 0.8 && overlapLat(o, lat, v.w, 0.25)) { ok = false; break; } }
@@ -165,12 +232,13 @@ export class Simulation {
     }
   }
   activeCount = 0;
+  private mix: number[] = [];
 
   private nextLinkOf(v: Veh, link: number) {
     if (link === v.dest) return -1;
-    const t = this.tables.get(v.dest)!;
+    const t = this.table(v.dest, v.cls);
     let n = t.next[link];
-    if (n < 0) { const ft = this.ffTables.get(v.dest)!; n = ft.next[link]; }
+    if (n < 0) { const ft = this.ffTable(v.dest, v.cls); n = ft.next[link]; }
     if (n < 0) { const L = this.net.links[link]; n = L.outMoves.length ? this.net.moves[L.outMoves[0]].outL : -1; }
     return n;
   }
@@ -178,7 +246,7 @@ export class Simulation {
   mapLat(v: Veh, m: Movement) {
     const inL = this.net.links[m.inL], out = this.net.links[m.outL];
     const lat = clampLat(out, v, Math.min(0.95, Math.max(0.05, v.lat / inL.width)) * out.width);
-    if (v.type === 0) return lat;
+    if (v.tw) return lat;
     const lanes = laneCenters(out); return lanes[nearestIdx(lanes, lat)];
   }
   private moveFor(v: Veh) { return v.next < 0 ? -1 : (this.moveOf.get(v.link * 65536 + v.next) ?? -1); }
@@ -247,7 +315,7 @@ export class Simulation {
           const w = v.type === 2 ? 3 : v.pcu; // bus priority weight
           if (v.v < 1.5) {
             o.queuePcu += w; o.queueN++; o.maxWait = Math.max(o.maxWait, v.stopT);
-            if (v.type === 0) o.motos++; else if (v.type === 2) o.buses++; else o.cars++;
+            if (v.tw) o.motos++; else if (v.type === 2) o.buses++; else o.cars++;
           } else {
             const eta = d / v.v; if (eta <= H) o.arrPcu += w; if (d < 40) o.gapS = Math.min(o.gapS, eta);
           }
@@ -321,7 +389,7 @@ export class Simulation {
         const o = list[i]; if (o.obstacle) continue; k++;
         const d = CL.stopS - o.s; if (d > 60) break;
         if (o.next !== cm.outL) continue;
-        if (d / Math.max(o.v, 0.8) < 3.0) return false;
+        if (d / Math.max(o.v, 0.8) < (L.alley ? 4.0 : 3.0)) return false;
       }
     }
     return true;
@@ -364,7 +432,7 @@ export class Simulation {
   }
 
   private idm(v: Veh, vmax: number, gap: number, vl: number) {
-    const v0 = Math.max(1, vmax * v.v0f);
+    const v0 = Math.max(1, Math.min(vmax * v.v0f, v.vcap));
     const ss = v.s0 + Math.max(0, v.v * v.T + (v.v * (v.v - vl)) / (2 * Math.sqrt(v.a * v.b)));
     const g = Math.max(gap, 0.05);
     let a = v.a * (1 - Math.pow(v.v / v0, 4) - (ss / g) * (ss / g));
@@ -400,9 +468,10 @@ export class Simulation {
     const ld = this.leaderIn(list, i, v.s, v.lat, v.w, 80);
     let gap = Infinity, vl = 0;
     if (ld) { gap = ld.s - ld.len - v.s; vl = ld.v; }
-    if (v.next < 0) { // destination link: drive off the end
-      const end = (this.eventLinks.includes(L.id) ? L.stopS : L.len + 30) - v.s;
-      if (this.eventLinks.includes(L.id) && end < gap) { gap = end + 1.5; vl = 0; }
+    if (v.next < 0) { // destination link: drive off the end (or park at the end: event venue, ngõ zone)
+      const park = this.parkEnd[L.id] === 1;
+      const end = (park ? L.stopS : L.len + 30) - v.s;
+      if (park && end < gap) { gap = end + 1.5; vl = 0; }
     } else if (!ld || ld.s - ld.len > L.stopS) {
       const d = L.stopS - v.s;
       if (d < 70) {
@@ -449,7 +518,7 @@ export class Simulation {
       const ot = this.tailOf(this.linkV[m.outL], v.lat, v.w, out.startS + 30);
       if (ot) { gap = m.len - v.s + ot.s - ot.len - out.startS; vl = ot.v; }
     }
-    const vmax = Math.min(out.vmax, m.turn === 'T' ? out.vmax : 6.5);
+    const vmax = Math.min(out.vmax, m.turn === 'T' ? out.vmax : 6.5, this.net.links[m.inL].alley ? 4 : 99);
     v.acc = this.idm(v, vmax, gap, vl);
     v.lim = gap - 0.1;
   }
@@ -458,7 +527,7 @@ export class Simulation {
   private lateral(list: Veh[], i: number, L: Link, dt: number) {
     const v = list[i]; if (v.obstacle) return;
     const turnLat = this.turnBand(v, L);
-    if (v.type === 0) {
+    if (v.tw) {
       if ((this.step_ + v.id) % 2 === 0) {
         let best = v.latT, bs = -Infinity;
         for (const dl of [-1.2, -0.6, 0, 0.6, 1.2]) {
@@ -467,7 +536,7 @@ export class Simulation {
           let g = ld ? Math.min(40, ld.s - ld.len - v.s) + (ld.v - v.v) * 0.5 : 40;
           g -= Math.abs(c - v.lat) * 1.5;
           if (turnLat >= 0) g -= Math.abs(c - turnLat) * 1.2;
-          else g -= Math.abs(c - L.width * 0.7) * 0.15; // keep right when cruising
+          else g -= v.type === 4 ? Math.abs(c - L.width * 0.88) * 0.6 : Math.abs(c - L.width * 0.7) * 0.15; // keep right when cruising (bicycles hug the kerb)
           if (g > bs + 0.01 && this.lateralSafe(list, i, v, c)) { bs = g; best = c; }
         }
         v.latT = best;
@@ -492,7 +561,7 @@ export class Simulation {
     // move toward target at limited lateral speed, re-checking side clearance
     const dl = v.latT - v.lat;
     if (Math.abs(dl) > 0.01) {
-      const vlat = v.type === 0 ? 1.2 : 0.8;
+      const vlat = v.type === 0 ? 1.2 : v.type === 4 ? 0.6 : 0.8;
       const nl = v.lat + Math.sign(dl) * Math.min(Math.abs(dl), vlat * dt);
       if (this.lateralSafe(list, i, v, nl)) v.lat = nl; else v.latT = v.lat;
     }
@@ -531,7 +600,7 @@ export class Simulation {
         if (v.obstacle) continue;
         this.advance(v, dt);
         if (v.next < 0) {
-          const endS = this.eventLinks.includes(li) ? L.stopS : L.len;
+          const endS = this.parkEnd[li] ? L.stopS : L.len;
           if (v.s >= endS - 0.6) exits.push(v);
         } else if (v.s >= L.stopS && v.committed) {
           const mi = this.moveFor(v); if (mi >= 0) transfersMv.push([v, mi]);
@@ -630,6 +699,7 @@ export class Simulation {
       avgDelayS: this.completed ? this.sumDelay / this.completed : 0, avgTravelS: this.completed ? this.sumTT / this.completed : 0,
       avgStops: this.completed ? this.sumStops / this.completed : 0, pcuQueued: pcuQ, longStopped: longS,
       co2kgH: this.t > 0 ? this.co2g / 1000 / (this.t / 3600) : 0, pedWaitS: this.pedServed ? this.pedWaitSum / this.pedServed : 0, maxQueue: maxQ,
+      violations: this.violations, localTrips: this.localTrips,
       ...(recent.length ? { recentDelayS: rd / recent.length, recentTravelS: rt / recent.length, recentStops: rs / recent.length } : {}),
     } as Metrics;
   }
@@ -662,6 +732,7 @@ export class Simulation {
 }
 
 // ---------------------------------------------------------------- helpers
+const MIXIDX = [0, 1, 2, 3, 4, 5, 6, 7];
 function overlapLat(o: Veh, lat: number, w: number, margin: number) { return Math.abs(o.lat - lat) < (o.w + w) / 2 + margin; }
 function sweepOverlap(o: Veh, lo: number, hi: number, w: number) { return o.lat + o.w / 2 + 0.15 > lo - w / 2 && o.lat - o.w / 2 - 0.15 < hi + w / 2; }
 function clampLat(L: Link, v: Veh, lat: number) { const m = v.w / 2 + 0.15; return Math.min(L.width - m, Math.max(m, lat)); }
