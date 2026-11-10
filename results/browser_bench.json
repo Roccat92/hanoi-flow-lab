@@ -1,0 +1,53 @@
+{
+ "note": "headless Chrome + SwiftShader (CPU rendering) on the build box; speed=Max",
+ "results": [
+  {
+   "target": 1000,
+   "quality": "normal",
+   "perf": "1000 xe · 863 bước/s · 36 FPS",
+   "reachedAfterS": 6
+  },
+  {
+   "target": 1000,
+   "quality": "low",
+   "perf": "1000 xe · 539 bước/s · 56 FPS",
+   "reachedAfterS": 6
+  },
+  {
+   "target": 3000,
+   "quality": "normal",
+   "perf": "3000 xe · 238 bước/s · 37 FPS",
+   "reachedAfterS": 6
+  },
+  {
+   "target": 3000,
+   "quality": "low",
+   "perf": "2999 xe · 164 bước/s · 51 FPS",
+   "reachedAfterS": 8
+  },
+  {
+   "target": 5000,
+   "quality": "normal",
+   "perf": "4998 xe · 148 bước/s · 14 FPS",
+   "reachedAfterS": 14
+  },
+  {
+   "target": 5000,
+   "quality": "low",
+   "perf": "4996 xe · 88 bước/s · 38 FPS",
+   "reachedAfterS": 18
+  },
+  {
+   "target": 10000,
+   "quality": "normal",
+   "perf": "9578 xe · 76 bước/s · 5 FPS",
+   "reachedAfterS": 108
+  },
+  {
+   "target": 10000,
+   "quality": "low",
+   "perf": "9362 xe · 51 bước/s · 7 FPS",
+   "reachedAfterS": 154
+  }
+ ]
+}

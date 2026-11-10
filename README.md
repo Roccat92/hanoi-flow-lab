@@ -40,6 +40,26 @@ Trễ trung bình mỗi chuyến đã hoàn thành (giây, càng thấp càng t�
 
 Đọc kết quả trung thực: AI và cảm biến đều tốt hơn rõ rệt so với đèn cố định, nhưng AI **không** thắng cảm biến ở mọi kịch bản; chênh lệch giữa hai bộ này chỉ vài phần trăm. 0 vi phạm an toàn tín hiệu ở mọi lần chạy. Số liệu đầy đủ: `results/compare_*.json` và `results/compare_*.log`. So sánh bằng SUMO: `results/sumo_compare_*.json`.
 
+### So sánh bằng SUMO (cao điểm sáng, 30 phút, seed 1, 2, 3, cùng chuyến đi cho cả 3)
+
+| | Cố định | Cảm biến | AI điều phối |
+|---|---|---|---|
+| Trễ TB (s, SUMO timeLoss) | 160.5 | **118.0** | 141.8 |
+| Chuyến hoàn thành | 2217 | **2334** | 2202 |
+
+Trên SUMO, AI điều phối tốt hơn đèn cố định nhưng **thua** đèn cảm biến SUMO. Lý do khả dĩ: bản port AI trong `backend/simcore.py` chỉ quan sát theo làn của SUMO và chưa có phần dự báo đoàn xe từ nút trên như bản TS.
+
+## Benchmark (đo trên máy build: Intel Xeon, Node 24, dt = 0.5 s)
+
+| Số xe trong mạng | ms/bước | bước/s | nhanh hơn thời gian thực |
+|---|---|---|---|
+| 1 000 | 0.46 | 2 191 | x1095 |
+| 3 000 | 1.64 | 610 | x305 |
+| 5 000 | 3.0 | 334 | x167 |
+| 10 000 | 6.0 | 167 | x83 |
+
+Ở 10 000 xe mạng lưới gần như kẹt cứng (đo hiệu năng, không phải kịch bản thực tế). Hiển thị: headless Chrome dùng SwiftShader (vẽ bằng CPU) đạt ~60 FPS với ~600 xe; chưa đo FPS ở 3k-10k xe trên GPU thật. Có chế độ nhẹ (`?quality=low`). Số liệu: `results/bench.json`.
+
 Mô hình chưa hiệu chỉnh với số đếm xe thực tế; nhu cầu (xe/giờ) và tỉ lệ xe máy là giả định, kết quả chỉ có giá trị so sánh tương đối.
 
 ## Chạy local

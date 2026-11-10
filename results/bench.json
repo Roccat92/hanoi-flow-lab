@@ -8,9 +8,9 @@
    "reached": 970,
    "measuredAt": 999,
    "simTimeToFillS": 270.5,
-   "msPerStep": 0.474,
-   "stepsPerSec": 2110,
-   "realtimeFactor": 1054.8,
+   "msPerStep": 0.456,
+   "stepsPerSec": 2191,
+   "realtimeFactor": 1095.4,
    "fillWallS": 0.2
   },
   {
@@ -18,30 +18,30 @@
    "reached": 2910,
    "measuredAt": 2999,
    "simTimeToFillS": 661,
-   "msPerStep": 1.775,
-   "stepsPerSec": 563,
-   "realtimeFactor": 281.6,
-   "fillWallS": 1.4
+   "msPerStep": 1.639,
+   "stepsPerSec": 610,
+   "realtimeFactor": 305,
+   "fillWallS": 1.3
   },
   {
    "target": 5000,
    "reached": 4851,
    "measuredAt": 4999,
    "simTimeToFillS": 1192,
-   "msPerStep": 3.116,
-   "stepsPerSec": 321,
-   "realtimeFactor": 160.5,
-   "fillWallS": 4.5
+   "msPerStep": 2.991,
+   "stepsPerSec": 334,
+   "realtimeFactor": 167.2,
+   "fillWallS": 4.3
   },
   {
    "target": 10000,
    "reached": 9700,
    "measuredAt": 9928,
    "simTimeToFillS": 5074,
-   "msPerStep": 5.989,
+   "msPerStep": 5.998,
    "stepsPerSec": 167,
-   "realtimeFactor": 83.5,
-   "fillWallS": 41.3
+   "realtimeFactor": 83.4,
+   "fillWallS": 41
   }
  ]
 }
