@@ -14,7 +14,7 @@ def build(kind):
     cmd = [NETCONVERT, '--osm-files', OSM, '-o', out, '--geometry.remove', '--roundabouts.guess', '--ramps.guess',
            '--junctions.join', '--tls.guess-signals', '--tls.discard-simple', '--tls.join', '--tls.default-type', kind,
            '--tls.yellow.time', '3', '--tls.allred.time', '2', '--tls.cycle.time', '90', '--osm.sidewalks', 'false',
-           '--keep-edges.by-vclass', 'passenger', '--no-turnarounds', 'true', '--default.lanewidth', '3.2', '--output.street-names', 'true', '--no-warnings']
+           '--keep-edges.by-vclass', 'motorcycle', '--no-turnarounds', 'true', '--default.lanewidth', '3.2', '--output.street-names', 'true', '--no-warnings']
     subprocess.run(cmd, check=True)
     print('wrote', out)
 

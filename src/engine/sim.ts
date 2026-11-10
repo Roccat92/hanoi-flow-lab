@@ -481,7 +481,7 @@ export class Simulation {
   observe(n: Node, st: SignalState): PhaseObs[] {
     const H = 12;
     return n.phases.map((ph, pi) => {
-      const o: PhaseObs = { queuePcu: 0, queueN: 0, arrPcu: 0, upArrPcu: 0, outOcc: 0, maxWait: 0, gapS: 99, pedWaiting: st.pedQ[pi].length, pedOldest: st.pedQ[pi].length ? this.t - st.pedQ[pi][0] : 0, demand: false, motos: 0, cars: 0, buses: 0 };
+      const o: PhaseObs = { queuePcu: 0, queueN: 0, arrPcu: 0, upArrPcu: 0, outOcc: 0, maxWait: 0, gapS: 99, pedWaiting: st.pedQ[pi].length, pedOldest: st.pedQ[pi].length ? this.t - st.pedQ[pi][0] : 0, demand: false, motos: 0, cars: 0, buses: 0, outFreePcu: 99, outQueuePcu: 0, satPcuS: 0, platoonEta: 99 };
       for (const li of ph.inLinks) {
         const L = this.net.links[li];
         for (const v of this.linkV[li]) {
@@ -497,12 +497,28 @@ export class Simulation {
           }
         }
         // platoons released upstream (coordination signal)
+        o.satPcuS += L.lanes * (L.alley ? 0.35 : 0.55);
         for (const mi of L.inMoves) {
           const U = this.net.links[this.net.moves[mi].inL];
-          for (const v of this.linkV[U.id]) { if (v.next !== li || v.v < 2) continue; const eta = (U.stopS - v.s) / v.v + L.stopS / L.vmax; if (eta <= H) o.upArrPcu += v.pcu; }
-          for (const v of this.mvV[mi]) { const eta = L.stopS / L.vmax; if (eta <= H) o.upArrPcu += v.pcu; }
+          for (const v of this.linkV[U.id]) { if (v.next !== li || v.v < 2) continue; const eta = (U.stopS - v.s) / v.v + L.stopS / L.vmax; if (eta <= H) o.upArrPcu += v.pcu; if (eta < o.platoonEta) o.platoonEta = eta; }
+          for (const v of this.mvV[mi]) { const eta = (L.stopS - L.startS) / Math.max(3, Math.min(L.vmax, v.v + 2)); if (eta <= H) o.upArrPcu += v.pcu; if (eta < o.platoonEta) o.platoonEta = eta; }
         }
+        // vehicles already moving on this link toward the line
+        for (const v of this.linkV[li]) { if (v.v < 2) continue; const eta = (L.stopS - v.s) / v.v; if (eta < o.platoonEta && eta > 0) o.platoonEta = eta; }
       }
+      // downstream storage and queues on the exits this phase would feed (weighted by who wants them)
+      const want = new Map<number, number>();
+      for (const li of ph.inLinks) for (const v of this.linkV[li]) { if (v.obstacle || this.net.links[li].stopS - v.s > 80 || v.next < 0) continue; want.set(v.next, (want.get(v.next) ?? 0) + v.pcu); }
+      let minFree = 99, outQ = 0;
+      for (const [ol, w] of want) {
+        if (!ph.moves.some(mi => this.net.moves[mi].outL === ol)) continue;
+        const OL = this.net.links[ol];
+        const cap = Math.max(1, ((OL.stopS - OL.startS) * OL.lanes) / 6.5 * 1.6); // pcu storage (motorbike-dense)
+        const free = cap - this.linkPcu[ol];
+        if (w > 0.5) minFree = Math.min(minFree, free);
+        let q = 0; for (const v of this.linkV[ol]) if (v.v < 1 && !v.obstacle) q += v.pcu; outQ += q * Math.min(1, w / 3);
+      }
+      o.outFreePcu = minFree; o.outQueuePcu = outQ;
       let occ = 0, cnt = 0;
       for (const mi of ph.moves) { const ol = this.net.moves[mi].outL; occ += this.occupancy(ol); cnt++; }
       o.outOcc = cnt ? occ / cnt : 0;

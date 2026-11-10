@@ -13,6 +13,9 @@ Steps:
 
 Usage: python3 scripts/import_osm.py [--offline]
 """
+import os as _os, sys as _sys
+if _os.environ.get('PYTHONHASHSEED') != '0':  # set iteration order must not change node/link ids between runs
+    _os.environ['PYTHONHASHSEED'] = '0'; _os.execv(_sys.executable, [_sys.executable] + _sys.argv)
 import json, math, os, sys, time, urllib.request, urllib.parse
 import xml.etree.ElementTree as ET
 from collections import defaultdict
@@ -138,6 +141,9 @@ def road_class(tags):
     return True
 
 
+from xml.sax.saxutils import quoteattr
+
+
 def write_sumo_osm(nodes, ways, road_ids):
     used = set()
     for wid in road_ids:
@@ -154,7 +160,7 @@ def write_sumo_osm(nodes, ways, road_ids):
             if tags:
                 f.write(f'<node id="{nid}" lat="{lat}" lon="{lon}">')
                 for k, v in tags.items():
-                    f.write('<tag k=%s v=%s/>' % (json.dumps(k), json.dumps(v)))
+                    f.write('<tag k=%s v=%s/>' % (quoteattr(k), quoteattr(v)))
                 f.write('</node>\n')
             else:
                 f.write(f'<node id="{nid}" lat="{lat}" lon="{lon}"/>\n')
@@ -165,7 +171,7 @@ def write_sumo_osm(nodes, ways, road_ids):
                 if r in nodes:
                     f.write(f'<nd ref="{r}"/>')
             for k, v in tags.items():
-                f.write('<tag k=%s v=%s/>' % (json.dumps(k, ensure_ascii=False), json.dumps(v, ensure_ascii=False)))
+                f.write('<tag k=%s v=%s/>' % (quoteattr(k), quoteattr(v)))
             f.write('</way>\n')
         f.write('</osm>\n')
     print('wrote', path)

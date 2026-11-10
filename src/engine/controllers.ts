@@ -5,6 +5,11 @@ export interface PhaseObs {
   queuePcu: number; queueN: number; arrPcu: number; upArrPcu: number; outOcc: number;
   maxWait: number; gapS: number; pedWaiting: number; pedOldest: number; demand: boolean;
   motos: number; cars: number; buses: number;
+  /** network-aware terms */
+  outFreePcu: number;   // free storage on the phase's exit links (pcu), min over exits actually used
+  outQueuePcu: number;  // queued pcu on those exits (downstream queue, max-pressure "minus" term)
+  satPcuS: number;      // saturation flow of the phase (pcu/s), from approach lanes
+  platoonEta: number;   // seconds until the next platoon released by an upstream signal reaches the stop line
 }
 export interface SignalState {
   phase: number; stage: 'G' | 'Y' | 'R'; tStage: number; next: number; lastEnd: number[];
@@ -65,15 +70,28 @@ export class Actuated implements Controller {
 }
 
 /**
- * AI coordinated: weighted max-pressure with short-horizon prediction.
- * pressure(p) = sum over approaches of (queuePCU + 0.6 * predicted arrivals in H s incl. platoons
- * released by upstream signals) * (1 - downstream occupancy) + fairness term on longest wait.
- * Switch only when the best other phase beats the current one by a switching cost (lost time).
+ * AI coordinated (v2): network-aware weighted max-pressure with short-horizon prediction.
+ * For each phase it predicts the vehicles it could actually discharge in the next H seconds:
+ *   served = min(queue + arrivals (incl. platoons released upstream), saturation * H, free downstream storage)
+ * and weights it against the downstream queue (max-pressure), the longest wait (anti-starvation,
+ * quadratic), waiting pedestrians and bus priority. It extends the current green when a platoon from
+ * the upstream signal is about to arrive (green wave), never feeds an exit that is spilling back, and
+ * switches only when the gain beats the lost time of a phase change (yellow + all-red).
  */
 export class AiCoordinated implements Controller {
-  kind: ControllerKind = 'ai'; label = 'AI điều phối (max-pressure + dự báo)';
-  H = 12; switchCost = 1.5; maxG = 60; gap = 2.5;
-  pressure(o: PhaseObs) { return (o.queuePcu + 0.6 * (o.arrPcu + o.upArrPcu)) * (1 - 0.8 * Math.min(1, o.outOcc)) + 0.04 * o.maxWait + 0.05 * o.pedOldest; }
+  kind: ControllerKind = 'ai'; label = 'AI điều phối (max-pressure mạng lưới + dự báo)';
+  // tuned on seed 4 only (morning + evening); reported comparisons use seeds 1-3
+  H = 12; maxG = 90; gap = 2.5; lost = SAFETY.YELLOW + SAFETY.ALL_RED; kCost = 2.5; minEff = 0;
+  served(o: PhaseObs) {
+    const want = o.queuePcu + 0.7 * o.arrPcu + 0.5 * o.upArrPcu;
+    return Math.max(0, Math.min(want, o.satPcuS * this.H, Math.max(0, o.outFreePcu)));
+  }
+  pressure(o: PhaseObs) {
+    const w = this.served(o);
+    const down = 0.35 * Math.min(o.outQueuePcu, o.queuePcu + o.arrPcu); // max-pressure: discount if exits already queue
+    const wait = (o.maxWait / 60) ** 2 * 3;                              // anti-starvation, grows quadratically
+    return w - down + wait + 0.06 * o.pedOldest;
+  }
   decide(node: Node, st: SignalState, obs: PhaseObs[]): Decision | null {
     const P = obs.map(o => this.pressure(o));
     const cur = P[st.phase];
@@ -81,24 +99,30 @@ export class AiCoordinated implements Controller {
     for (let i = 0; i < P.length; i++) if (i !== st.phase && obs[i].demand && P[i] > bp) { bp = P[i]; best = i; }
     if (best < 0) return null; // nobody waiting elsewhere: keep green
     const c = obs[st.phase], b = obs[best];
-    const vals = { pCur: +fmt(cur, 2), pBest: +fmt(bp, 2), qCur: +fmt(c.queuePcu), qBest: +fmt(b.queuePcu), arrCur: +fmt(c.arrPcu + c.upArrPcu), arrBest: +fmt(b.arrPcu + b.upArrPcu), outOccCur: +fmt(c.outOcc, 2), waitBest: Math.round(b.maxWait), green: Math.round(st.tStage) };
+    // cost of switching: flow the current phase would lose during yellow + all-red, minimum 1
+    const switchCost = Math.max(1, Math.min(c.queuePcu + c.arrPcu, c.satPcuS * this.lost) * this.kCost);
+    const vals = { pCur: +fmt(cur, 2), pBest: +fmt(bp, 2), qCur: +fmt(c.queuePcu), qBest: +fmt(b.queuePcu), arrCur: +fmt(c.arrPcu + c.upArrPcu), arrBest: +fmt(b.arrPcu + b.upArrPcu), outFreeCur: +fmt(c.outFreePcu), outFreeBest: +fmt(b.outFreePcu), waitBest: Math.round(b.maxWait), green: Math.round(st.tStage), platoon: +fmt(Math.min(99, c.platoonEta)) };
     const name = (i: number) => node.phases[i].label || `pha ${i + 1}`;
     const why = () => {
       const w: string[] = [];
-      if (b.queueN) w.push(`${b.queueN} xe đang chờ (${b.motos} xe máy, ${b.cars} ô tô${b.buses ? `, ${b.buses} buýt` : ''})`);
+      if (b.queueN) w.push(`${b.queueN} xe đang chờ (${b.motos} xe máy/xe đạp, ${b.cars} ô tô${b.buses ? `, ${b.buses} buýt` : ''})`);
       if (b.upArrPcu > 0.5) w.push(`dự báo ${fmt(b.upArrPcu)} PCU từ nút trên tới trong ${this.H}s`);
       if (b.maxWait > 30) w.push(`xe chờ lâu nhất ${Math.round(b.maxWait)}s`);
       if (b.pedWaiting) w.push(`${b.pedWaiting} người đi bộ chờ`);
+      w.push(`đường ra còn chỗ ${fmt(b.outFreePcu)} PCU`);
       return w.join('; ');
     };
-    if (c.queueN === 0 && c.gapS > this.gap && c.upArrPcu < 0.5)
-      return { switchTo: best, text: `Pha hiện tại hết xe (không có xe tới vạch trong ${this.gap}s, không có đoàn xe từ nút trên), chuyển sang ${name(best)}: ${why()}`, values: vals };
-    if (c.outOcc > 0.85 && c.queuePcu > 0)
-      return { switchTo: best, text: `Đường ra của pha hiện tại đã đầy ${Math.round(c.outOcc * 100)}% (tràn ngược), xả xanh cho ${name(best)} để tránh chẹn nút`, values: vals };
+    if (c.outFreePcu < 1 && c.queuePcu > 0 && b.outFreePcu > 2)
+      return { switchTo: best, text: `Đường ra của pha hiện tại hết chỗ (còn ${fmt(Math.max(0, c.outFreePcu))} PCU, tràn ngược): xanh tiếp chỉ làm chẹn nút, chuyển sang ${name(best)}: ${why()}`, values: vals };
+    // green wave: a platoon from the upstream signal arrives within a few seconds and the exit can take it
+    const platoonSoon = c.platoonEta < 6 && c.upArrPcu > 1 && c.outFreePcu > c.upArrPcu && st.tStage < this.maxG - 6 && b.maxWait < 90;
+    if (c.queueN === 0 && c.gapS > this.gap && !platoonSoon)
+      return { switchTo: best, text: `Pha hiện tại hết xe (không có xe tới vạch trong ${this.gap}s, không có đoàn xe từ nút trên sắp tới), chuyển sang ${name(best)}: ${why()}`, values: vals };
     if (st.tStage >= this.maxG)
       return { switchTo: best, text: `Giới hạn xanh ${this.maxG}s: chuyển sang ${name(best)} (áp lực ${fmt(bp)} so với ${fmt(cur)})`, values: vals };
-    if (bp > cur + this.switchCost)
-      return { switchTo: best, text: `Chuyển sang ${name(best)}: áp lực ${fmt(bp)} > ${fmt(cur)} + ${this.switchCost} (chi phí chuyển pha). ${why()}. Pha hiện tại còn ${fmt(c.queuePcu)} PCU chờ, ${fmt(c.arrPcu + c.upArrPcu)} PCU sắp tới`, values: vals };
+    if (platoonSoon) return null; // hold for the arriving platoon (logged via the inspector values)
+    if (bp > cur + switchCost && st.tStage >= this.minEff)
+      return { switchTo: best, text: `Chuyển sang ${name(best)}: lượng xe xả được dự báo ${fmt(this.served(b))} PCU, áp lực ${fmt(bp)} > ${fmt(cur)} + ${fmt(switchCost)} (mất ${this.lost}s vàng + đỏ toàn phần). ${why()}. Pha hiện tại còn ${fmt(c.queuePcu)} PCU chờ, ${fmt(c.arrPcu + c.upArrPcu)} PCU sắp tới, đường ra còn ${fmt(c.outFreePcu)} PCU`, values: vals };
     return null;
   }
 }

@@ -49,7 +49,7 @@ export class MapView {
       return best;
     };
   }
-  destroy() { try { this.app.destroy(true, { children: true }); } catch { /* ignore */ } }
+  destroy() { this.ready = false; try { this.app.destroy(true, { children: true }); } catch { /* ignore */ } }
 
   private setMap() {
     const key = (this.layers.night ? 'n' : 'd');

@@ -953,7 +953,7 @@
 <node id="2064169789" lat="21.0241061" lon="105.8239404"/>
 <node id="2085393455" lat="21.0110507" lon="105.8145207"/>
 <node id="2085393456" lat="21.0120591" lon="105.8157277"/>
-<node id="2085393457" lat="21.010423" lon="105.8148199"><tag k="addr:city" v="H\u00e0 N\u1ed9i"/><tag k="addr:country" v="VN"/><tag k="addr:district" v="\u0110\u1ed1ng \u0110a"/><tag k="addr:housenumber" v="S\u1ed1 14 ng\u00f5 66"/><tag k="addr:street" v="Ng\u00f5 120 Y\u00ean L\u00e3ng"/><tag k="addr:subdistrict" v="Th\u1ecbnh Quang"/><tag k="name" v="Trekking Coffee"/></node>
+<node id="2085393457" lat="21.010423" lon="105.8148199"><tag k="addr:city" v="Hà Nội"/><tag k="addr:country" v="VN"/><tag k="addr:district" v="Đống Đa"/><tag k="addr:housenumber" v="Số 14 ngõ 66"/><tag k="addr:street" v="Ngõ 120 Yên Lãng"/><tag k="addr:subdistrict" v="Thịnh Quang"/><tag k="name" v="Trekking Coffee"/></node>
 <node id="2085393458" lat="21.0117656" lon="105.8154839"/>
 <node id="2085393459" lat="21.0106984" lon="105.81504"/>
 <node id="2085393460" lat="21.0102375" lon="105.8156933"/>
@@ -2542,7 +2542,7 @@
 <node id="6689615838" lat="21.0194256" lon="105.8317528"/>
 <node id="6689635502" lat="21.0158078" lon="105.8255605"/>
 <node id="6689635505" lat="21.0164123" lon="105.825414"/>
-<node id="6689651609" lat="21.0194065" lon="105.8317273"><tag k="addr:housenumber" v="241"/><tag k="addr:street" v="Ph\u1ed1 Kh\u00e2m Thi\u00ean"/></node>
+<node id="6689651609" lat="21.0194065" lon="105.8317273"><tag k="addr:housenumber" v="241"/><tag k="addr:street" v="Phố Khâm Thiên"/></node>
 <node id="6689651610" lat="21.019063" lon="105.8316529"/>
 <node id="6689651611" lat="21.0194246" lon="105.831732"/>
 <node id="6689655520" lat="21.019382" lon="105.8324258"/>
@@ -4849,7 +4849,7 @@
 <node id="10910524084" lat="21.0027129" lon="105.8220683"/>
 <node id="10936162711" lat="21.0091565" lon="105.8243959"/>
 <node id="10939070427" lat="21.0050873" lon="105.836401"/>
-<node id="10939079284" lat="21.0085161" lon="105.8284444"><tag k="access" v="permissive"/><tag k="barrier" v="gate"/><tag k="name" v="C\u1ed5ng S\u1ed1 1"/></node>
+<node id="10939079284" lat="21.0085161" lon="105.8284444"><tag k="access" v="permissive"/><tag k="barrier" v="gate"/><tag k="name" v="Cổng Số 1"/></node>
 <node id="10939618810" lat="21.0113415" lon="105.8227812"><tag k="noexit" v="yes"/></node>
 <node id="10941195745" lat="21.0084728" lon="105.8284222"/>
 <node id="10941195746" lat="21.0082579" lon="105.8289069"/>
@@ -7768,12 +7768,12 @@
 <node id="14031320182" lat="21.0221507" lon="105.812651"/>
 <node id="14031320183" lat="21.0220765" lon="105.8150209"/>
 <node id="14031320184" lat="21.0220718" lon="105.8149745"/>
-<node id="14031320185" lat="21.0227337" lon="105.8153886"><tag k="access" v="customers"/><tag k="barrier" v="gate"/><tag k="name" v="C\u1ed5ng 1 - Ch\u1ee3 Th\u00e0nh C\u00f4ng B"/></node>
-<node id="14031320186" lat="21.0221506" lon="105.815049"><tag k="access" v="customers"/><tag k="barrier" v="gate"/><tag k="name" v="C\u1ed5ng 3 - Ch\u1ee3 Th\u00e0nh C\u00f4ng B"/></node>
+<node id="14031320185" lat="21.0227337" lon="105.8153886"><tag k="access" v="customers"/><tag k="barrier" v="gate"/><tag k="name" v="Cổng 1 - Chợ Thành Công B"/></node>
+<node id="14031320186" lat="21.0221506" lon="105.815049"><tag k="access" v="customers"/><tag k="barrier" v="gate"/><tag k="name" v="Cổng 3 - Chợ Thành Công B"/></node>
 <node id="14031320187" lat="21.0227575" lon="105.8147276"/>
 <node id="14031320188" lat="21.0226521" lon="105.8147689"/>
 <node id="14031320189" lat="21.0226501" lon="105.8147413"/>
-<node id="14031320190" lat="21.0226778" lon="105.8147383"><tag k="access" v="customers"/><tag k="barrier" v="gate"/><tag k="name" v="C\u1ed5ng 2 - Ch\u1ee3 Th\u00e0nh C\u00f4ng B"/></node>
+<node id="14031320190" lat="21.0226778" lon="105.8147383"><tag k="access" v="customers"/><tag k="barrier" v="gate"/><tag k="name" v="Cổng 2 - Chợ Thành Công B"/></node>
 <node id="14031320191" lat="21.0226448" lon="105.8153772"/>
 <node id="14031320192" lat="21.0224995" lon="105.8153924"/>
 <node id="14031320193" lat="21.0225034" lon="105.8148895"/>
@@ -9754,7 +9754,7 @@
 <way id="1220267652"><nd ref="11307433849"/><nd ref="11307433850"/><nd ref="11307433851"/><nd ref="11302013173"/><tag k="highway" v="service"/><tag k="service" v="alley"/></way>
 <way id="1222208993"><nd ref="106109949"/><nd ref="10180021586"/><nd ref="5707655782"/><tag k="highway" v="service"/><tag k="surface" v="asphalt"/></way>
 <way id="1222432203"><nd ref="7141103579"/><nd ref="11337701450"/><nd ref="11337701451"/><nd ref="13444737003"/><tag k="highway" v="service"/><tag k="name" v="Hẻm 72/1/77 Đường Nguyễn Trãi"/><tag k="service" v="alley"/></way>
-<way id="1222432204"><nd ref="7141103582"/><nd ref="7141103580"/><nd ref="13444702192"/><nd ref="7141103581"/><tag k="highway" v="service"/><tag k="motorcar" v="destination"/><tag k="name" v="Hẻm 64 Ngách 1 Ngõ 72 Nguyễn Trãi"/><tag k="service" v="alley"/><tag k="source" v="https://www.streetview.vn/?picId=952684a2-707e-463f-b4f7-de38762b0f77&lat=21.004369614&lng=105.813825298&yaw=153&pitch=-4"/></way>
+<way id="1222432204"><nd ref="7141103582"/><nd ref="7141103580"/><nd ref="13444702192"/><nd ref="7141103581"/><tag k="highway" v="service"/><tag k="motorcar" v="destination"/><tag k="name" v="Hẻm 64 Ngách 1 Ngõ 72 Nguyễn Trãi"/><tag k="service" v="alley"/><tag k="source" v="https://www.streetview.vn/?picId=952684a2-707e-463f-b4f7-de38762b0f77&amp;lat=21.004369614&amp;lng=105.813825298&amp;yaw=153&amp;pitch=-4"/></way>
 <way id="1222432206"><nd ref="11337701454"/><nd ref="7513713111"/><nd ref="13444737003"/><nd ref="8266275597"/><tag k="highway" v="service"/><tag k="motorcar" v="destination"/><tag k="name" v="Hẻm 72/1/101 Đường Nguyễn Trãi"/><tag k="service" v="alley"/></way>
 <way id="1222432207"><nd ref="11337701456"/><nd ref="11337701458"/><nd ref="8266280899"/><nd ref="7513713111"/><tag k="highway" v="service"/><tag k="motorcar" v="destination"/><tag k="name" v="Hẻm 72/1/101 Đường Nguyễn Trãi"/><tag k="service" v="alley"/></way>
 <way id="1222432209"><nd ref="11337701458"/><nd ref="11337701459"/><tag k="highway" v="service"/><tag k="service" v="alley"/></way>
@@ -9912,11 +9912,11 @@
 <way id="1311700942"><nd ref="12141523152"/><nd ref="12141523153"/><nd ref="12141523154"/><tag k="highway" v="service"/><tag k="name" v="Ngõ Trại Tóc"/><tag k="service" v="alley"/></way>
 <way id="1311700943"><nd ref="12141523154"/><nd ref="12141523155"/><tag k="highway" v="service"/><tag k="name" v="Ngõ Trại Tóc"/><tag k="service" v="alley"/></way>
 <way id="1311808249"><nd ref="5707680826"/><nd ref="1753897154"/><tag k="highway" v="service"/><tag k="name" v="Ngõ 180 Phố Nguyễn Lương Bằng"/><tag k="surface" v="asphalt"/></way>
-<way id="1311992667"><nd ref="12143983917"/><nd ref="12143983915"/><tag k="alt_name" v="Ngõ 133 Phố Giáp Nhất"/><tag k="highway" v="service"/><tag k="motorcar" v="destination"/><tag k="name" v="Ngách 72/136 Đường Nguyễn Trãi"/><tag k="service" v="alley"/><tag k="source" v="https://www.streetview.vn/?picId=182cc1fd-2e58-439b-9ddb-9d8719ca5086&lat=21.004144487&lng=105.816326841&yaw=325&pitch=2"/></way>
-<way id="1311992668"><nd ref="8266280964"/><nd ref="12143983918"/><tag k="highway" v="service"/><tag k="source" v="https://www.streetview.vn/?picId=60235986-0df3-4e08-8e37-dae6dbacc4bc&lat=21.005619102&lng=105.814014924&yaw=56&pitch=0"/></way>
-<way id="1311992669"><nd ref="12143983923"/><nd ref="12143983922"/><nd ref="12143983921"/><nd ref="12143983920"/><nd ref="12143983919"/><nd ref="7513713098"/><tag k="highway" v="service"/><tag k="source" v="https://www.streetview.vn/?picId=f3a18aa4-fbe4-4834-b693-080184cd2276&lat=21.006072648&lng=105.813900505&yaw=163&pitch=1"/></way>
-<way id="1311992670"><nd ref="12143983926"/><nd ref="12143983924"/><tag k="highway" v="service"/><tag k="source" v="https://www.streetview.vn/?picId=7743ec50-55f9-42ee-8202-8cfe6918ab8a&lat=21.005477582&lng=105.815794283&yaw=279&pitch=-2"/></way>
-<way id="1311992671"><nd ref="12143983927"/><nd ref="12143983926"/><nd ref="12143983925"/><tag k="highway" v="service"/><tag k="source" v="https://www.streetview.vn/?picId=7743ec50-55f9-42ee-8202-8cfe6918ab8a&lat=21.005477582&lng=105.815794283&yaw=221&pitch=-9"/></way>
+<way id="1311992667"><nd ref="12143983917"/><nd ref="12143983915"/><tag k="alt_name" v="Ngõ 133 Phố Giáp Nhất"/><tag k="highway" v="service"/><tag k="motorcar" v="destination"/><tag k="name" v="Ngách 72/136 Đường Nguyễn Trãi"/><tag k="service" v="alley"/><tag k="source" v="https://www.streetview.vn/?picId=182cc1fd-2e58-439b-9ddb-9d8719ca5086&amp;lat=21.004144487&amp;lng=105.816326841&amp;yaw=325&amp;pitch=2"/></way>
+<way id="1311992668"><nd ref="8266280964"/><nd ref="12143983918"/><tag k="highway" v="service"/><tag k="source" v="https://www.streetview.vn/?picId=60235986-0df3-4e08-8e37-dae6dbacc4bc&amp;lat=21.005619102&amp;lng=105.814014924&amp;yaw=56&amp;pitch=0"/></way>
+<way id="1311992669"><nd ref="12143983923"/><nd ref="12143983922"/><nd ref="12143983921"/><nd ref="12143983920"/><nd ref="12143983919"/><nd ref="7513713098"/><tag k="highway" v="service"/><tag k="source" v="https://www.streetview.vn/?picId=f3a18aa4-fbe4-4834-b693-080184cd2276&amp;lat=21.006072648&amp;lng=105.813900505&amp;yaw=163&amp;pitch=1"/></way>
+<way id="1311992670"><nd ref="12143983926"/><nd ref="12143983924"/><tag k="highway" v="service"/><tag k="source" v="https://www.streetview.vn/?picId=7743ec50-55f9-42ee-8202-8cfe6918ab8a&amp;lat=21.005477582&amp;lng=105.815794283&amp;yaw=279&amp;pitch=-2"/></way>
+<way id="1311992671"><nd ref="12143983927"/><nd ref="12143983926"/><nd ref="12143983925"/><tag k="highway" v="service"/><tag k="source" v="https://www.streetview.vn/?picId=7743ec50-55f9-42ee-8202-8cfe6918ab8a&amp;lat=21.005477582&amp;lng=105.815794283&amp;yaw=221&amp;pitch=-9"/></way>
 <way id="1315710191"><nd ref="12178416240"/><nd ref="12178416242"/><nd ref="12178416241"/><tag k="highway" v="service"/></way>
 <way id="1316399208"><nd ref="12184246241"/><nd ref="12184246242"/><nd ref="12184246243"/><nd ref="12184246244"/><nd ref="12184246245"/><tag k="highway" v="service"/><tag k="surface" v="concrete"/></way>
 <way id="1316399209"><nd ref="5717110577"/><nd ref="12184246291"/><nd ref="5716408801"/><tag k="highway" v="service"/><tag k="layer" v="1"/><tag k="surface" v="concrete"/></way>

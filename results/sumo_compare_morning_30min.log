@@ -1,0 +1,2 @@
+ Retrying in 1 seconds
+1 fixed {'active': 2197, 'waitingEntry': 485, 'completed': 2249, 'throughputVph': 5316.0, 'avgSpeedKmh': 5.4, 'stopped': 1904, 'avgDelayS': 141.4, 'avgTravelS': 295.4, 'wallS': 74.7}

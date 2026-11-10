@@ -1,0 +1,19 @@
+seed 1 morning 30min x1
+controller	avgDelayS	avgTravelS	completed	throughputVph	avgSpeedKmh	avgStops	active	waitingEntry	totalVehHoursLost	pedWaitS	switches	forced	viol
+fixed	135.6	359.5	3572.0	9276.0	18.4	4.6	1380.0	15.0	213.8	26.6	1132.0	0.0	0
+actuated	147.4	367.8	3555.0	9468.0	20.7	4.7	1368.0	0.0	237.4	22.0	1873.0	0.0	0
+ai	137.2	358.2	3765.0	8844.0	21.5	4.5	1341.0	0.0	225.2	24.2	1811.0	0.0	0
+seed 2 morning 30min x1
+controller	avgDelayS	avgTravelS	completed	throughputVph	avgSpeedKmh	avgStops	active	waitingEntry	totalVehHoursLost	pedWaitS	switches	forced	viol
+fixed	140.0	362.8	3731.0	9792.0	20.2	4.6	1250.0	15.0	199.9	26.6	1130.0	0.0	0
+actuated	137.5	361.3	3815.0	9720.0	19.8	4.9	1244.0	0.0	204.2	22.8	1785.0	0.0	0
+ai	128.9	350.0	3811.0	9420.0	21.3	4.8	1151.0	4.0	179.5	23.2	1775.0	0.0	0
+seed 3 morning 30min x1
+controller	avgDelayS	avgTravelS	completed	throughputVph	avgSpeedKmh	avgStops	active	waitingEntry	totalVehHoursLost	pedWaitS	switches	forced	viol
+fixed	140.2	362.8	3694.0	9312.0	21.1	4.7	1187.0	19.0	194.2	27.4	1131.0	0.0	0
+actuated	157.9	382.5	3843.0	10056.0	22.9	5.4	1179.0	2.0	214.2	22.1	1792.0	0.0	0
+ai	130.6	353.0	3698.0	8400.0	22.6	4.9	1255.0	5.0	178.8	25.1	1790.0	0.0	0
+MEAN over seeds 1,2,3
+fixed	138.6	361.7	3665.7	9460.0	19.9	4.6	1272.3	16.3	202.6	26.9	1131.0	0.0
+actuated	147.6	370.5	3737.7	9748.0	21.1	5.0	1263.7	0.7	218.6	22.3	1816.7	0.0
+ai	132.3	353.7	3758.0	8888.0	21.8	4.8	1249.0	3.0	194.5	24.1	1792.0	0.0
