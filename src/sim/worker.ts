@@ -34,6 +34,7 @@ function snapshot() {
     const n = sim.net.nodes[id];
     signals.push({ id, phase: st.phase, stage: st.stage, t: st.tStage, colors: n.moves.map(m => sim.sigColor(m)).join('') });
   }
+  const umodes: [number, number][] = []; for (const id of sim.sigNodes) if (sim.uMode[id]) umodes.push([id, sim.uMode[id]]);
   let np = 0; for (const z of sim.zebras) np += z.walkers.length;
   const peds = new Float32Array(np * PSTRIDE); let j = 0;
   for (const z of sim.zebras) for (let i = 0; i < z.walkers.length; i++) {
@@ -45,7 +46,7 @@ function snapshot() {
     peds[j++] = z.ax + dx * wu - uy * sp; peds[j++] = z.ay + dy * wu + ux * sp; peds[j++] = w.c; peds[j++] = w.walking ? 1 : 0;
   }
   const crashes = sim.crashes.map(c => ({ id: c.id, x: c.x, y: c.y, h: c.h, crowd: c.crowd, side: c.side, t0: c.t0, t1: c.t1 }));
-  const snap: any = { t: sim.t, n: vs.length, veh: arr, signals, stepsPerSec: sps, engine: ENGINE, peds, np, crashes };
+  const snap: any = { t: sim.t, n: vs.length, veh: arr, signals, stepsPerSec: sps, engine: ENGINE, peds, np, crashes, umodes };
   if (sim.events.length < evIdx) evIdx = 0;
   if (sim.events.length > evIdx) { snap.events = sim.events.slice(evIdx); evIdx = sim.events.length; }
   const tr: Transferable[] = [arr.buffer, peds.buffer];
@@ -124,7 +125,7 @@ self.onmessage = (e: MessageEvent<ToWorker>) => {
   }
   else if (m.type === 'series') post({ type: 'series', series: sim.series.slice() as Metrics[] });
   else if (m.type === 'compare') {
-    const results: CompareResult[] = runComparison(data, m, (done, total, label) => post({ type: 'compareProgress', done, total, label }));
+    const results: CompareResult[] = runComparison(data, m, (done, total, label) => post({ type: 'compareProgress', done, total, label }), m.kinds?.length ? m.kinds : undefined);
     post({ type: 'compareDone', results, cfg: { seed: m.seed, scenario: m.scenario, minutes: m.minutes, demandScale: m.demandScale } });
   }
 };

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import type { CrashCfg, Edits } from '../engine/types';
+import type { CrashCfg, Edits, NodeMode } from '../engine/types';
+import { MODE_LABEL } from '../engine/modes';
 import type { LinkInfo, NodeInfo } from '../sim/protocol';
 
 const KEY = 'hanoi-flow-lab:scenarios';
@@ -59,6 +60,8 @@ export function Editor(p: Props) {
           <button onClick={() => setNode(n.id, { signal: !sigNow })}>{sigNow ? 'Gỡ đèn' : 'Thêm đèn'}</button>
           {sigNow && <button onClick={() => p.setMoveFrom(n.id)}>Di chuyển đèn…</button>}
         </div>
+        {sigNow && <div className="row"><label title="Ghi đè chế độ điều khiển của toàn mạng cho riêng nút này">Chế độ nút <select value={ne.mode ?? ''} onChange={e => setNode(n.id, { mode: (e.target.value || undefined) as NodeMode | undefined })}>
+          <option value="">theo chế độ toàn mạng</option>{(Object.keys(MODE_LABEL) as NodeMode[]).map(k => <option key={k} value={k}>{MODE_LABEL[k]}</option>)}</select></label></div>}
         {sigNow && <>
           <div className="row"><label>Chu kỳ (s) <input type="number" min={40} max={180} value={ne.cycle ?? 90} onChange={e => setNode(n.id, { cycle: +e.target.value, splits: undefined })} /></label>
             <label>Lệch pha (s) <input type="number" min={0} max={120} value={ne.offset ?? 0} onChange={e => setNode(n.id, { offset: +e.target.value })} /></label></div>

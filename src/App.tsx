@@ -12,8 +12,10 @@ import { Network } from './engine/network';
 
 function initialEdits(): Edits { try { const q = Q.get('edits'); if (q) return JSON.parse(decodeURIComponent(q)); return JSON.parse(localStorage.getItem('hanoi-flow-lab:current') ?? '{}'); } catch { return {}; } }
 
+import { CTRL_LABEL } from './engine/modes';
+import { Results } from './ui/Results';
 const Q = new URLSearchParams(location.search);
-const CTRL: Record<ControllerKind, string> = { fixed: 'Cố định thời gian', actuated: 'Cảm biến (actuated)', ai: 'AI điều phối' };
+const CTRL: Record<ControllerKind, string> = CTRL_LABEL;
 const SPEEDS = [1, 2, 4, 8, 16, 64];
 
 export default function App() {
@@ -23,7 +25,7 @@ export default function App() {
   const [layers, setLayers] = useState<Layers>({ heat: Q.get('layer') === 'heat', density: Q.get('layer') === 'density', signals: true, ai: true, night: Q.get('night') === '1', light: Q.get('quality') === 'low' });
   const [playing, setPlaying] = useState(true); const [speed, setSpeed] = useState(+(Q.get('speed') ?? 4));
   const [split, setSplit] = useState(Q.get('view') === 'split'); const [splitB, setSplitB] = useState<ControllerKind>('fixed');
-  const [showCmp, setShowCmp] = useState(Q.get('compare') === '1');
+  const [showCmp, setShowCmp] = useState(Q.get('compare') === '1'); const [showRes, setShowRes] = useState(Q.get('results') === '1');
   const [snapM, setSnapM] = useState<Metrics | null>(null); const [snapB, setSnapB] = useState<Metrics | null>(null);
   const [hist, setHist] = useState<Metrics[]>([]); const [histB, setHistB] = useState<Metrics[]>([]);
   const [info, setInfo] = useState<{ engine: string; sps: number; n: number; fps: number }>({ engine: '', sps: 0, n: 0, fps: 0 });
@@ -88,6 +90,7 @@ export default function App() {
         <button className={showEd ? 'on' : ''} onClick={() => setShowEd(!showEd)}>🛠 Chỉnh sửa</button>
         <label title="0 = trật tự, 100% = hỗn loạn kiểu Hà Nội giờ cao điểm">Hỗn loạn <input type="range" min={0} max={1} step={0.05} value={cfg.chaos ?? 0.6} onChange={e => setCfg({ ...cfg, chaos: +e.target.value })} />{Math.round((cfg.chaos ?? 0.6) * 100)}%</label>
         <button className="primary" onClick={() => setShowCmp(true)}>⚗ So sánh</button>
+        <button onClick={() => setShowRes(true)}>📑 Kết quả</button>
       </header>
       <div className="layers">
         {([['heat', 'Nhiệt tốc độ'], ['density', 'Mật độ'], ['signals', 'Đèn tín hiệu'], ['ai', 'Quyết định AI'], ['night', 'Ban đêm'], ['light', 'Chế độ nhẹ']] as [keyof Layers, string][]).map(([k, l]) =>
@@ -113,6 +116,8 @@ export default function App() {
               <K l="Hàng chờ dài nhất" v={m ? m.maxQueue + ' xe' : '-'} />
               <K l="Chờ người đi bộ" v={m ? m.pedWaitS.toFixed(0) + ' s' : '-'} />
               <K l="CO₂ ước tính" v={m ? fmtN(m.co2kgH) + ' kg/h' : '-'} />
+              <K l="Suýt va chạm" v={m ? (m.nearMiss ?? 0) : '-'} />
+              <K l="Kẹt cứng nút" v={m ? (m.gridlockEvents ?? 0) : '-'} warn={!!m && (m.gridlockEvents ?? 0) > 20} />
             </div>
             {split && snapB && <div className="muted small">Bên phải ({CTRL[splitB]}): {snapB.active} xe · {snapB.avgSpeedKmh.toFixed(1)} km/h · trễ {snapB.avgDelayS.toFixed(0)} s · ra {snapB.completed} · chờ vào {snapB.waitingEntry}</div>}
           </div>
@@ -150,6 +155,7 @@ export default function App() {
         </aside>
       </main>
       <footer>Bản đồ: {data.meta.attribution} · Khu vực: {data.meta.area} · {data.meta.counts.nodes} nút, {data.meta.counts.links} đoạn đường, {data.meta.counts.signals} nút đèn · Mô phỏng phục vụ nghiên cứu, không phải số liệu đo thực tế.</footer>
+      {showRes && <Results onClose={() => setShowRes(false)} onUse={k => { setCfg({ ...cfg, controller: k }); setShowRes(false); }} />}
       {showCmp && <Compare data={data} onClose={() => setShowCmp(false)} initial={{ seed: cfg.seed, scenario: cfg.scenario, demandScale: cfg.demandScale, edits: cfg.edits, chaos: cfg.chaos, crashes: cfg.crashes }} />}
     </div>
   );

@@ -128,5 +128,6 @@ export class AiCoordinated implements Controller {
 }
 
 export function makeController(kind: ControllerKind): Controller {
+  // network-wide kinds that are not a single signal controller run their signalised nodes (if any) with AI v2
   return kind === 'fixed' ? new FixedTime() : kind === 'actuated' ? new Actuated() : new AiCoordinated();
 }

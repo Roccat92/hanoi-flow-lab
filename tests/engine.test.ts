@@ -252,3 +252,56 @@ describe('map editor overrides', () => {
     expect(b.zones.length).toBe(a.zones.length - 1);
   });
 });
+
+describe('signal-free and hybrid control modes', () => {
+  const overlapsOn = (sim: Simulation) => {
+    let n = 0;
+    for (const list of sim.linkV) for (let a = 0; a < list.length; a++) for (let b = a + 1; b < list.length && b < a + 40; b++) {
+      const A = list[a], B = list[b]; if (Math.abs(A.lat - B.lat) < (A.w + B.w) / 2 - 0.05 && A.s - A.len < B.s - 0.05) n++;
+    }
+    return n;
+  };
+  it('no signals: no vehicle overlap, conflicting movements never occupied together, pedestrians safe, gridlock and near-miss measured', () => {
+    const sim = new Simulation(data, { seed: 5, controller: 'nosignal', scenario: 'evening', demandScale: 1, dt: 0.5 });
+    sim.checkSafety = true;
+    let ov = 0, clash = 0;
+    for (let i = 0; i < 2400; i++) {
+      sim.step();
+      if (i % 10 === 0) {
+        ov += overlapsOn(sim);
+        for (const m of sim.net.moves) if (sim.mvV[m.id].length) for (const c of m.conflicts) if (sim.mvV[c].length) clash++;
+      }
+    }
+    expect(sim.sig.size).toBe(0);
+    expect(sim.sigNodes.length).toBeGreaterThan(20);
+    expect(ov).toBe(0);
+    expect(clash).toBe(0);
+    expect(sim.pedConflicts).toBe(0);
+    expect(sim.pedCrossed).toBeGreaterThan(50);
+    expect(sim.nearMiss).toBeGreaterThan(0);
+    expect(sim.completed).toBeGreaterThan(500);
+    expect(typeof sim.metrics().gridlockEvents).toBe('number');
+  });
+  for (const k of ['major', 'flash', 'allway', 'optimal'] as ControllerKind[]) it(`${k}: signal safety and no overlap`, () => {
+    const sim = run(k, 1600, 4, 'morning');
+    expect(sim.safetyViolations).toBe(0);
+    expect(overlapsOn(sim)).toBe(0);
+    expect(sim.pedConflicts).toBe(0);
+    for (const [id] of sim.sig) expect(['fixed', 'actuated', 'ai']).toContain(sim.nodeMode.get(id));
+  });
+  it('major-only keeps signals at big junctions only; per-node override wins', () => {
+    const a = new Simulation(data, { seed: 1, controller: 'major', scenario: 'normal', demandScale: 1, dt: 0.5 });
+    expect(a.sig.size).toBeGreaterThan(5); expect(a.sig.size).toBeLessThan(a.sigNodes.length);
+    const nid = a.sigNodes[0];
+    const b = new Simulation(data, { seed: 1, controller: 'nosignal', scenario: 'normal', demandScale: 1, dt: 0.5, nodeModes: { [nid]: 'actuated' } });
+    expect(b.sig.size).toBe(1); expect(b.nodeMode.get(nid)).toBe('actuated');
+    const c = new Simulation(data, { seed: 1, controller: 'ai', scenario: 'normal', demandScale: 1, dt: 0.5, edits: { nodes: { [nid]: { mode: 'flash' } } } });
+    expect(c.sig.has(nid)).toBe(false); expect(c.uMode[nid]).toBe(2);
+  });
+  it('no-signal and optimal runs are reproducible', () => {
+    for (const k of ['nosignal', 'optimal'] as ControllerKind[]) {
+      const a = run(k, 800, 11, 'evening').metrics(), b = run(k, 800, 11, 'evening').metrics();
+      expect(a).toEqual(b);
+    }
+  });
+});

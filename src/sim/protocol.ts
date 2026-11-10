@@ -10,6 +10,8 @@ export interface Snapshot {
   peds?: Float32Array; np?: number;
   crashes?: { id: number; x: number; y: number; h: number; crowd: number; side: number; t0: number; t1: number }[];
   events?: SimEvent[];
+  /** unsignalised control at physically signalised junctions: [node id, 1 dark | 2 flashing amber | 3 all-way yield] */
+  umodes?: [number, number][];
 }
 export interface NodeInfo {
   id: number; name: string; signal: boolean; phases: { label: string; inLinks: string[]; prot: number; perm: number; pedOnly: boolean }[];
@@ -20,7 +22,7 @@ export interface NodeInfo {
 }
 export interface LinkInfo { id: number; name: string; cls: string; lanes: number; speedKmh: number; lenM: number; twoWay: boolean; closed: boolean; inf: string[]; vehicles: number; meanKmh: number; occ: number; outMoves: { id: number; to: string; turn: string; outL: number }[]; twin: number }
 export interface VehInfo { id: number; type: string; speedKmh: number; link: string; next: string; dest: string; travelS: number; ffS: number; stops: number; waitS: number; lat: number; inJunction: boolean; route: string[] }
-export interface CompareResult { controller: string; label: string; summary: Metrics & Record<string, number>; series: Metrics[]; wallMs: number; violations: number }
+export interface CompareResult { controller: string; label: string; summary: Metrics & Record<string, number>; series: Metrics[]; wallMs: number; violations: number; nodes?: Record<number, { flow: number; waitS: number; mode: string }> }
 
 export type ToWorker =
   | { type: 'init'; data: MapData; cfg: SimConfig }
@@ -30,7 +32,7 @@ export type ToWorker =
   | { type: 'light'; on: boolean }
   | { type: 'inspectNode'; id: number }
   | { type: 'inspectVeh'; id: number }
-  | { type: 'compare'; seed: number; scenario: SimConfig['scenario']; minutes: number; demandScale: number; edits?: SimConfig['edits']; chaos?: number; crashes?: SimConfig['crashes'] }
+  | { type: 'compare'; seed: number; scenario: SimConfig['scenario']; minutes: number; demandScale: number; edits?: SimConfig['edits']; chaos?: number; crashes?: SimConfig['crashes']; kinds?: SimConfig['controller'][]; nodeModes?: SimConfig['nodeModes'] }
   | { type: 'series' }
   | { type: 'inspectLink'; id: number };
 

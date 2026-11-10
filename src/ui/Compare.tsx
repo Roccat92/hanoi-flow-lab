@@ -1,11 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
-import type { SimConfig, MapData, ScenarioKind } from '../engine/types';
+import type { SimConfig, MapData, ScenarioKind, ControllerKind } from '../engine/types';
+import { CTRL_LABEL } from '../engine/modes';
 import { SCENARIOS } from '../engine/scenarios';
 import { workerClient, type SimClient } from '../sim/client';
 import type { CompareResult } from '../sim/protocol';
 import { Chart } from './Chart';
 
-const COLORS: Record<string, string> = { fixed: '#ff7b5c', actuated: '#ffd23f', ai: '#4fe3ff' };
+const COLORS: Record<string, string> = { fixed: '#ff7b5c', actuated: '#ffd23f', ai: '#4fe3ff', nosignal: '#b08cff', major: '#7dff8a', flash: '#ffa24f', allway: '#e0e0e0', optimal: '#ff5ce1' };
+const ALL_KINDS: ControllerKind[] = ['fixed', 'actuated', 'ai', 'nosignal', 'major', 'flash', 'allway', 'optimal'];
 type Row = { key: string; label: string; unit: string; better: 'low' | 'high'; get: (r: CompareResult) => number; d?: number };
 const ROWS: Row[] = [
   { key: 'avgDelayS', label: 'Trễ trung bình / chuyến (xe đã ra)', unit: 's', better: 'low', get: r => r.summary.avgDelayS },
@@ -22,11 +24,16 @@ const ROWS: Row[] = [
   { key: 'switches', label: 'Số lần đổi pha', unit: 'lần', better: 'low', get: r => r.summary.switches, d: 0 },
   { key: 'forced', label: 'Lần lớp an toàn phải ép', unit: 'lần', better: 'low', get: r => r.summary.forced, d: 0 },
   { key: 'violations', label: 'Vi phạm an toàn tín hiệu', unit: '', better: 'low', get: r => r.violations, d: 0 },
+  { key: 'maxQueue', label: 'Hàng chờ dài nhất ở nút đèn', unit: 'xe', better: 'low', get: r => r.summary.maxQueue, d: 0 },
+  { key: 'nearMiss', label: 'An toàn: suýt va chạm (xe xung đột < 1.5 s)', unit: 'lần', better: 'low', get: r => r.summary.nearMiss ?? 0, d: 0 },
+  { key: 'hardBrakes', label: 'An toàn: phanh gấp (> 4.5 m/s²)', unit: 'lần', better: 'low', get: r => r.summary.hardBrakes ?? 0, d: 0 },
+  { key: 'gridlockEvents', label: 'Kẹt cứng nút (mọi hướng đứng > 60 s)', unit: 'lần', better: 'low', get: r => r.summary.gridlockEvents ?? 0, d: 0 },
+  { key: 'pedConflicts', label: 'Xung đột người đi bộ', unit: '', better: 'low', get: r => r.summary.pedConflicts ?? 0, d: 0 },
 ];
 
 export function Compare({ data, onClose, initial }: { data: MapData; onClose: () => void; initial: { seed: number; scenario: ScenarioKind; demandScale: number; edits?: SimConfig['edits']; chaos?: number; crashes?: SimConfig['crashes'] } }) {
   const [seed, setSeed] = useState(initial.seed); const [scenario, setScenario] = useState<ScenarioKind>(initial.scenario);
-  const [minutes, setMinutes] = useState(30); const [demand, setDemand] = useState(initial.demandScale);
+  const [minutes, setMinutes] = useState(30); const [kinds, setKinds] = useState<ControllerKind[]>(['fixed', 'actuated', 'ai', 'nosignal', 'major', 'flash', 'optimal']); const [demand, setDemand] = useState(initial.demandScale);
   const [prog, setProg] = useState<{ done: number; total: number; label: string } | null>(null);
   const [res, setRes] = useState<{ results: CompareResult[]; cfg: any } | null>(null);
   const cl = useRef<SimClient | null>(null);
@@ -39,7 +46,7 @@ export function Compare({ data, onClose, initial }: { data: MapData; onClose: ()
       if (m.type === 'compareProgress') setProg({ done: m.done, total: m.total, label: m.label });
       if (m.type === 'compareDone') { setRes({ results: m.results, cfg: m.cfg }); setProg(null); c.close(); cl.current = null; }
     });
-    c.send({ type: 'compare', seed, scenario, minutes, demandScale: demand, edits: initial.edits, chaos: initial.chaos, crashes: initial.crashes });
+    c.send({ type: 'compare', seed, scenario, minutes, demandScale: demand, edits: initial.edits, chaos: initial.chaos, crashes: initial.crashes, kinds: ALL_KINDS.filter(k => kinds.includes(k)) });
   };
   const exportJSON = () => download(`hanoi-flow-lab_compare_${scenario}_seed${seed}.json`, JSON.stringify(res, null, 1), 'application/json');
   const exportCSV = () => {
@@ -58,11 +65,12 @@ export function Compare({ data, onClose, initial }: { data: MapData; onClose: ()
         <label>Seed <input type="number" value={seed} onChange={e => setSeed(+e.target.value)} /></label>
         <label>Thời lượng mô phỏng <select value={minutes} onChange={e => setMinutes(+e.target.value)}>{[10, 20, 30, 45, 60].map(x => <option key={x} value={x}>{x} phút</option>)}</select></label>
         <label>Hệ số nhu cầu <input type="number" step={0.1} min={0.2} max={3} value={demand} onChange={e => setDemand(+e.target.value)} /></label>
-        <button className="primary" onClick={run} disabled={!!prog}>{prog ? 'Đang chạy…' : 'Chạy 3 bộ điều khiển'}</button>
+        <button className="primary" onClick={run} disabled={!!prog}>{prog ? 'Đang chạy…' : `Chạy ${kinds.length} chế độ`}</button>
       </div>
+      <div className="row kinds">{ALL_KINDS.map(k => <label key={k} className="chk" style={{ color: COLORS[k] }}><input type="checkbox" checked={kinds.includes(k)} onChange={e => setKinds(e.target.checked ? [...kinds, k] : kinds.filter(x => x !== k))} />{CTRL_LABEL[k]}</label>)}</div>
       {prog && <div className="progress"><div style={{ width: `${(100 * prog.done / prog.total).toFixed(0)}%` }} /><span>{prog.label} {(100 * prog.done / prog.total).toFixed(0)}%</span></div>}
       {res && <>
-        <div className="muted small">Kết quả đo trực tiếp từ mô phỏng (engine TS, dt = 0.5 s) với seed {res.cfg.seed}, {SCENARIOS[res.cfg.scenario as ScenarioKind].label}, {res.cfg.minutes} phút, nhu cầu ×{res.cfg.demandScale}. Ô xanh là tốt nhất theo từng chỉ số; không chỉnh tay kết quả, kể cả khi AI thua.</div>
+        <div className="muted small">Kết quả đo trực tiếp từ mô phỏng (engine TS, dt = 0.5 s) với seed {res.cfg.seed}, {SCENARIOS[res.cfg.scenario as ScenarioKind].label}, {res.cfg.minutes} phút, nhu cầu ×{res.cfg.demandScale}. Ô xanh là tốt nhất theo từng chỉ số; % so với đèn cố định (nếu có); không chỉnh tay kết quả, kể cả khi AI thua. Va quẹt theo lịch giống hệt nhau cho mọi chế độ.</div>
         <table className="cmp"><thead><tr><th>Chỉ số</th>{res.results.map(r => <th key={r.controller} style={{ color: COLORS[r.controller] }}>{r.label}</th>)}</tr></thead><tbody>
           {ROWS.map(row => {
             const vals = res.results.map(row.get); const best = row.better === 'low' ? Math.min(...vals) : Math.max(...vals);

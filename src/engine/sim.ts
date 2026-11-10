@@ -2,12 +2,14 @@ import { Network, cubicAt, type Link, type Movement, type Node } from './network
 import { Router, type RouteTable } from './routing';
 import { Rng } from './rng';
 import { SCENARIOS, VTYPES, fullMix, LOCAL_MIX, LOCAL_SHARE, type Scenario } from './scenarios';
-import { makeController, FixedTime, SAFETY, type Controller, type PhaseObs, type SignalState } from './controllers';
-import { DEFAULT_CRASH, type CrashCfg, type DecisionLog, type MapData, type Metrics, type SimConfig, type SimEvent, type VType } from './types';
+import { makeController, FixedTime, Actuated, AiCoordinated, SAFETY, type Controller, type PhaseObs, type SignalState } from './controllers';
+import { modeFor, isSignalMode, CTRL_LABEL } from './modes';
+import { DEFAULT_CRASH, type NodeMode, type CrashCfg, type DecisionLog, type MapData, type Metrics, type SimConfig, type SimEvent, type VType } from './types';
 
 export class Veh {
   id = 0; type: VType = 0; len = 0; w = 0; a = 0; b = 0; T = 0; s0 = 0; v0f = 1; pcu = 1;
   link = -1; mv = -1; s = 0; v = 0; acc = 0; lat = 0; latT = 0; latFrac = 0.5;
+  hb = false;
   dest = -1; next = -1; tCreate = 0; tEnter = 0; ff = 0; stops = 0; stopped = false; stopT = 0; waitTotal = 0;
   committed = false; resMv = -1; lcT = 0; obstacle = false; lim = Infinity; dist = 0;
   frozen = -1; // id of the modelled fender-bender this vehicle is stuck in
@@ -48,6 +50,10 @@ export class Simulation {
   crashes: Crash[] = []; crashCfg: CrashCfg; events: SimEvent[] = []; private crashRng: Rng; private nextCrashT = Infinity; private crashLink = -1; private crashSeq = 0; private crashPlanT = 0;
   safetyViolations = 0; checkSafety = false; maxDisp = 0; chaos = 0.6;
   private lastObs = new Map<number, PhaseObs[]>();
+  /** per-junction control: signal controller per signalised node; uMode for unsignalised control (0 priority by road class, 1 dark/negotiation, 2 flashing amber, 3 all-way yield) */
+  ctrls = new Map<number, Controller>(); private inst = new Map<NodeMode, Controller>(); uMode: Uint8Array; nodeMode = new Map<number, NodeMode>();
+  sigNodes: number[] = []; nearMiss = 0; hardBrakes = 0; gridlockEvents = 0; gridlockNodeS = 0; private gridlocked: Uint8Array;
+  nodeFlow: Float64Array; nodeWaitS: Float64Array; label = '';
 
   constructor(data: MapData, public cfg: SimConfig) {
     this.crashCfg = { ...DEFAULT_CRASH, ...(cfg.crashes ?? {}) };
@@ -55,6 +61,9 @@ export class Simulation {
     this.crashRng = new Rng((cfg.seed * 7919 + 17) >>> 0);
     this.net = new Network(data, cfg.edits ?? {}); this.router = new Router(this.net); this.rng = new Rng(cfg.seed);
     this.sc = SCENARIOS[cfg.scenario]; this.mix = fullMix(this.sc.mix); this.chaos = Math.max(0, Math.min(1, cfg.chaos ?? cfg.edits?.chaos ?? 0.6)); this.ctrl = makeController(cfg.controller);
+    this.label = CTRL_LABEL[cfg.controller] ?? this.ctrl.label;
+    this.uMode = new Uint8Array(this.net.nodes.length); this.gridlocked = new Uint8Array(this.net.nodes.length);
+    this.nodeFlow = new Float64Array(this.net.nodes.length); this.nodeWaitS = new Float64Array(this.net.nodes.length);
     const nL = this.net.links.length, nM = this.net.moves.length;
     this.linkV = Array.from({ length: nL }, () => []); this.mvV = Array.from({ length: nM }, () => []);
     this.tailOcc = new Float64Array(nL); this.linkSpeed = new Float64Array(nL); this.linkPcu = new Float64Array(nL);
@@ -144,9 +153,22 @@ export class Simulation {
     this.tcDyn ??= Float64Array.from(this.net.moves, (_, i) => this.turnCost(i, false));
     for (const k of keys) this.tables.set(k, this.router.tableTo(Math.floor(k / 3), this.costs[k % 3], this.tcDyn));
   }
+  private ctrlOf(m: NodeMode): Controller {
+    let c = this.inst.get(m);
+    if (!c) {
+      c = (m === 'fixed' || m === 'actuated' || m === 'ai') && this.ctrl.kind === m ? this.ctrl : m === 'fixed' ? new FixedTime() : m === 'actuated' ? new Actuated() : new AiCoordinated();
+      this.inst.set(m, c);
+    }
+    return c;
+  }
   private setupSignals() {
     for (const n of this.net.nodes) {
       if (!n.signal) continue;
+      this.sigNodes.push(n.id);
+      const mode = modeFor(this.cfg.controller, this.net, n, this.cfg.nodeModes, this.cfg.edits?.nodes?.[n.id]?.mode);
+      this.nodeMode.set(n.id, mode);
+      if (!isSignalMode(mode)) { this.uMode[n.id] = mode === 'off' ? 1 : mode === 'flash' ? 2 : 3; continue; }
+      const ctrl = this.ctrlOf(mode); this.ctrls.set(n.id, ctrl);
       const pm = n.phases.map((p, i) => {
         // pedestrians walking parallel to phase i cross the roads of the other phases
         let w = 0; n.phases.forEach((q, j) => { if (j !== i) for (const l of q.inLinks) w = Math.max(w, this.net.links[l].width); });
@@ -155,11 +177,11 @@ export class Simulation {
       });
       this.pedMin.set(n.id, pm);
       this.sig.set(n.id, { phase: 0, stage: 'G', tStage: 0, next: 0, lastEnd: n.phases.map(() => 0), minGreen: SAFETY.MIN_GREEN, pedQ: n.phases.map(() => []), switches: 0, lastReason: '', lastDecisionT: 0, forced: 0 });
-      if (this.ctrl instanceof FixedTime) {
+      if (ctrl instanceof FixedTime) {
         const w = n.phases.map(p => p.pedOnly ? 0.2 : p.inLinks.reduce((a, l) => a + this.net.links[l].lanes * this.net.links[l].rank, 0));
         const ne = this.cfg.edits?.nodes?.[n.id];
-        if (ne?.splits?.length) this.ctrl.setExact(n, ne.splits, pm);
-        else this.ctrl.setSplits(n, w, pm, ne?.cycle ?? 90);
+        if (ne?.splits?.length) ctrl.setExact(n, ne.splits, pm);
+        else ctrl.setSplits(n, w, pm, ne?.cycle ?? 90);
         if (ne?.offset) this.sig.get(n.id)!.tStage = -Math.abs(ne.offset); // green-wave offset: delays the first switch
       }
     }
@@ -186,6 +208,14 @@ export class Simulation {
         const ph = n.phases.map((p, i) => (p.pedOnly || !p.inLinks.includes(li)) ? i : -1).filter(i => i >= 0);
         if (!ph.length) continue;
         add(L, Math.min(L.len - 0.3, L.stopS + 2.0), nid, ph, false); done.add(li); if (L.twin >= 0) done.add(L.twin);
+      }
+    }
+    // physically signalised junctions run without signals (dark / flashing amber / all-way yield): the same zebras, crossed on gaps
+    for (const [nid, mode] of this.nodeMode) {
+      if (isSignalMode(mode)) continue;
+      for (const li of this.net.nodes[nid].inLinks) {
+        const L = this.net.links[li]; if (L.closed || !L.outMoves.length || L.alley || done.has(li)) continue;
+        add(L, Math.min(L.len - 0.3, L.stopS + 2.0), nid, [], false); done.add(li); if (L.twin >= 0) done.add(L.twin);
       }
     }
     // mid-block / unsignalised zebras mapped in OSM (highway=crossing): pedestrians wait for a gap, vehicles then yield
@@ -231,8 +261,8 @@ export class Simulation {
         if (st) {
           // walk only during a serving green, with enough guaranteed green left to finish crossing
           const need = z.len / 1.0;
-          may = st.stage === 'G' && z.phases.includes(st.phase) && st.tStage + need <= Math.max(st.minGreen, (this.ctrl instanceof FixedTime ? (this.ctrl.getSplits(z.node)?.[st.phase] ?? 0) : 0)) + 2 && this.zebraClear(z);
-        } else may = this.zebraGap(z);
+          may = st.stage === 'G' && z.phases.includes(st.phase) && st.tStage + need <= Math.max(st.minGreen, (this.ctrls.get(z.node) instanceof FixedTime ? ((this.ctrls.get(z.node) as FixedTime).getSplits(z.node)?.[st.phase] ?? 0) : 0)) + 2 && this.zebraClear(z);
+        } else may = this.zebraGap(z) && (z.node < 0 || this.zebraClear(z)); // junction zebra without signal: also nothing in / reserved for the movements it crosses
         if (may) for (const w of z.walkers) if (!w.walking) { w.walking = true; this.pedWaitSum += this.t - w.t0; this.pedServed++; anyWalking = true; }
       }
       const was = (z as any).active === true;
@@ -468,7 +498,7 @@ export class Simulation {
         q.length = 0; // waiting pedestrians step off once their zebra is clear (updatePeds)
       } else if (st.stage === 'G' && tick && st.tStage >= st.minGreen) {
         const obs = this.observe(n, st); this.lastObs.set(nid, obs);
-        let d = this.ctrl.decide(n, st, obs, this.t);
+        let d = this.ctrls.get(nid)!.decide(n, st, obs, this.t);
         let kind: DecisionLog['kind'] = 'switch';
         // safety layer: max green and anti-starvation override the controller
         for (let p = 0; p < obs.length; p++) {
@@ -554,10 +584,17 @@ export class Simulation {
     }
     // gap acceptance: permissive left turns (motorbikes accept ~2.5 s, cars 4.5 s), ngõ exits 4 s, else 3 s
     const agg = v.tw ? 1 - 0.35 * this.chaos : v.type === 5 ? 1 - 0.15 * this.chaos : 1; // honk-and-go gap acceptance
-    const need = (m.turn === 'L' && col === 'g' ? (v.tw ? 2.5 : 4.5) : this.net.links[m.inL].alley ? 4.0 : 3.0) * agg;
-    if (!(this.goCache[mi] && this.gapCache[mi] >= need)) {
-      // deadlock breaker at uncontrolled/permissive conflicts: after 25 s waiting, only the box rule applies
-      if (!(v.stopT > 25 && col !== 'G' && this.boxClear(m))) return false;
+    const um = col === 'N' ? this.uMode[m.node] : 0;
+    let need = (m.turn === 'L' && col === 'g' ? (v.tw ? 2.5 : 4.5) : this.net.links[m.inL].alley ? 4.0 : 3.0) * agg;
+    if (um === 1) need = v.tw ? 2.0 * agg : 3.5;      // dark junction: motorbikes squeeze in, cars hesitate
+    else if (um === 3) need = 2.0 * agg;               // all-way yield: short gaps, everyone takes turns
+    let ok = this.goCache[mi] === 1 && this.gapCache[mi] >= need;
+    // dark junction: cars also watch every moving conflicting vehicle (hesitant yielding), not only bigger roads
+    if (ok && um === 1 && !v.tw && this.yieldGap(m, 'N', true) < 2.5) ok = false;
+    if (!ok) {
+      // deadlock breaker at uncontrolled/permissive conflicts: after a wait only the box rule applies (motorbikes push in sooner at dark junctions)
+      const brk = um === 1 ? (v.tw ? 8 : 20) : um === 3 ? 12 : 25;
+      if (!(v.stopT > brk && col !== 'G' && this.boxClear(m))) return false;
     }
     return this.spaceOk(m, v);
   }
@@ -582,7 +619,22 @@ export class Simulation {
   /** a committed vehicle reserves its movement: conflicting movements cannot be granted until it has crossed */
   private reserve(v: Veh, mi: number) {
     v.committed = true; v.resMv = mi; this.resv[mi]++;
+    if (this.petMin(this.net.moves[mi], v) < 1.5) this.nearMiss++;
     for (const c of this.net.moves[mi].conflicts) { this.goStamp[c] = this.step_; this.goCache[c] = 0; }
+  }
+  /** time (s) until the nearest moving vehicle of a non-red conflicting movement reaches the junction: a post-encroachment-time proxy */
+  private petMin(m: Movement, v: Veh) {
+    let best = Infinity;
+    for (const c of m.conflicts) {
+      const col = this.sigColor(c); if (col === 'R' || col === 'Y') continue;
+      const cm = this.net.moves[c]; const CL = this.net.links[cm.inL]; const list = this.linkV[cm.inL];
+      for (let i = 0; i < list.length && i < 4; i++) {
+        const o = list[i]; if (o === v || o.obstacle || o.v < 1) continue;
+        const d = CL.stopS - o.s; if (d > 40) break; if (d < 0 || o.next !== cm.outL) continue;
+        best = Math.min(best, d / o.v);
+      }
+    }
+    return best;
   }
   release(v: Veh) { if (v.resMv >= 0) { this.resv[v.resMv]--; v.resMv = -1; } v.committed = false; }
   /** smallest time gap (s) of a prioritised conflicting vehicle approaching this movement; all=true treats every conflict as prioritised */
@@ -593,7 +645,11 @@ export class Simulation {
       let prior: boolean;
       if (all) prior = true;
       else if (col === 'g') prior = this.sigColor(c) === 'G';
-      else if (col === 'N') prior = this.net.links[cm.inL].rank > L.rank;
+      else if (col === 'N') {
+        const um = this.uMode[m.node];
+        // dark junction: only a much bigger road is respected, otherwise first come / boldest goes; all-way: everybody yields
+        prior = um === 3 ? true : um === 1 ? this.net.links[cm.inL].rank >= L.rank + 2 : this.net.links[cm.inL].rank > L.rank;
+      }
       else prior = false;
       if (!prior) continue;
       const CL = this.net.links[cm.inL]; const list = this.linkV[cm.inL];
@@ -624,6 +680,8 @@ export class Simulation {
     this.updateSignals(dt);
     this.updatePeds(dt);
     this.computeTails();
+    for (const nid of this.sigNodes) for (const li of this.net.nodes[nid].inLinks) for (const v of this.linkV[li]) if (v.v < 0.5 && !v.obstacle) this.nodeWaitS[nid] += dt;
+    if (this.step_ % 20 === 0) this.detectGridlock(10);
     // 1) lateral behaviour (first, so car-following below sees the new lateral positions)
     for (let li = 0; li < this.linkV.length; li++) { const list = this.linkV[li]; const L = this.net.links[li]; for (let i = 0; i < list.length; i++) this.lateral(list, i, L, dt); }
     // 2) accelerations (front to back on links, then movements)
@@ -686,7 +744,8 @@ export class Simulation {
 
   private accelOnLink(list: Veh[], i: number, L: Link) {
     const v = list[i]; if (v.obstacle || v.frozen >= 0) { v.acc = 0; v.lim = 0; v.v = 0; return; }
-    const vmax = L.vmax * (this.incidentObs && L.id === this.incidentLink ? 0.6 : 1);
+    let vmax = L.vmax * (this.incidentObs && L.id === this.incidentLink ? 0.6 : 1);
+    if (this.uMode[L.to] && L.stopS - v.s < 40) vmax *= this.uMode[L.to] === 2 ? 0.8 : 0.7; // slow down approaching flashing-amber / dark / all-way junctions
     const ld = this.leaderIn(list, i, v.s, v.lat, v.w, 80, v.tw ? 0.2 - 0.12 * this.chaos : 0.2);
     let gap = Infinity, vl = 0;
     if (ld) { gap = ld.s - ld.len - v.s; vl = ld.v; }
@@ -882,7 +941,7 @@ export class Simulation {
       // two vehicles released in the same step may map onto the same exit band: the later one waits at the line
       const olat = this.mapLat(v, m);
       if (this.mvV[mi].some(o => Math.abs(o.lat - olat) < (o.w + v.w) / 2 + 0.05 && o.s - o.len < over + 0.1)) { v.v = 0; continue; } // wait at the line (never moved backwards)
-      removeFrom(this.linkV[v.link], v);
+      removeFrom(this.linkV[v.link], v); this.nodeFlow[m.node]++;
       v.latFrac = Math.min(0.95, Math.max(0.05, v.lat / L.width));
       this.net.pointAt(L, L.stopS, this.net.offsetOf(L, v.lat), tmp); v.gx0 = tmp.x; v.gy0 = tmp.y; v.gh0 = tmp.h;
       const out = this.net.links[m.outL];
@@ -893,9 +952,12 @@ export class Simulation {
     }
     for (const [v, ol, m] of transfersLink) {
       const over = v.s - m.len;
-      removeFrom(this.mvV[m.id], v);
       const out = this.net.links[ol];
-      v.mv = -1; v.link = ol; v.s = Math.min(out.startS + over, Math.max(out.startS, out.stopS - 0.05)); // never jump over the next stop line in one step
+      const ns = Math.min(out.startS + over, Math.max(out.startS, out.stopS - 0.05)); // never jump over the next stop line in one step
+      // merging streams (two movements into one exit) can arrive in the same band at once: the later one waits at the junction exit
+      if (this.linkV[ol].some(o => Math.abs(o.lat - v.lat) < (o.w + v.w) / 2 - 0.05 && o.s - o.len < ns + 0.05 && o.s > ns - v.len - 0.05)) { v.s = m.len - 0.01; v.v = 0; continue; }
+      removeFrom(this.mvV[m.id], v);
+      v.mv = -1; v.link = ol; v.s = ns;
       v.next = this.nextLinkOf(v, ol);
       this.linkV[ol].push(v);
     }
@@ -909,6 +971,7 @@ export class Simulation {
     if (v.acc * dt < -v.v) ds = v.v * v.v / (2 * -v.acc); // stops within step
     if (ds > v.lim) { ds = Math.max(0, v.lim); nv = Math.min(nv, ds / dt); }
     if (ds > this.maxDisp) this.maxDisp = ds;
+    if (v.acc < -4.5 && v.v > 2) { if (!v.hb) { v.hb = true; this.hardBrakes++; } } else if (v.acc > -1) v.hb = false;
     v.s += ds; v.v = nv; v.dist += ds;
     const st = v.v < 0.5;
     if (st) { if (!v.stopped) { v.stopped = true; v.stops++; } v.stopT += dt; v.waitTotal += dt; }
@@ -952,7 +1015,7 @@ export class Simulation {
     const forEach = (v: Veh) => { if (v.obstacle) return; n++; sv += v.v; if (v.v < 0.5) { stopped++; pcuQ += v.pcu; if (v.stopT > 120) longS++; } };
     for (const l of this.linkV) for (const v of l) forEach(v);
     for (const l of this.mvV) for (const v of l) forEach(v);
-    for (const [nid] of this.sig) { const nd = this.net.nodes[nid]; for (const li of nd.inLinks) { let q = 0; for (const v of this.linkV[li]) if (v.v < 1 && !v.obstacle) q++; maxQ = Math.max(maxQ, q); } }
+    for (const nid of this.sigNodes) { const nd = this.net.nodes[nid]; for (const li of nd.inLinks) { let q = 0; for (const v of this.linkV[li]) if (v.v < 1 && !v.obstacle) q++; maxQ = Math.max(maxQ, q); } }
     let wait = 0; for (const s of this.sources) wait += s.queue.length;
     const recent = this.done.filter(d => d.t > this.t - 300);
     const win = Math.min(300, Math.max(this.t, 1));
@@ -963,9 +1026,26 @@ export class Simulation {
       avgDelayS: this.completed ? this.sumDelay / this.completed : 0, avgTravelS: this.completed ? this.sumTT / this.completed : 0,
       avgStops: this.completed ? this.sumStops / this.completed : 0, pcuQueued: pcuQ, longStopped: longS,
       co2kgH: this.t > 0 ? this.co2g / 1000 / (this.t / 3600) : 0, pedWaitS: this.pedServed ? this.pedWaitSum / this.pedServed : 0, maxQueue: maxQ,
-      violations: this.violations, localTrips: this.localTrips, pedCrossed: this.pedCrossed, busDwellS: this.busDwells ? this.busDwellSum / this.busDwells : 0,
+      violations: this.violations, nearMiss: this.nearMiss, hardBrakes: this.hardBrakes, gridlockEvents: this.gridlockEvents, gridlockNodeS: this.gridlockNodeS, localTrips: this.localTrips, pedCrossed: this.pedCrossed, busDwellS: this.busDwells ? this.busDwellSum / this.busDwells : 0,
       ...(recent.length ? { recentDelayS: rd / recent.length, recentTravelS: rt / recent.length, recentStops: rs / recent.length } : {}),
     } as Metrics;
+  }
+
+  /** a junction is gridlocked when at least two approaches have their front vehicle standing at the line > 60 s and nothing moves inside the junction */
+  private detectGridlock(dtCheck: number) {
+    for (const n of this.net.nodes) {
+      if (n.deg < 3 || n.boundary || n.inLinks.length < 2) continue;
+      let stuck = 0, moving = false;
+      for (const li of n.inLinks) {
+        const list = this.linkV[li]; if (!list.length) continue; const f = list[0]; const L = this.net.links[li];
+        if (f.obstacle || f.frozen >= 0) continue;
+        if (f.v < 0.1 && f.stopT > 60 && f.s > L.stopS - 8) stuck++; else if (f.v > 0.5) moving = true;
+      }
+      if (!moving) for (const mi of n.moves) { for (const o of this.mvV[mi]) if (o.v > 0.5) { moving = true; break; } if (moving) break; }
+      const g = stuck >= 2 && !moving;
+      if (g) { if (!this.gridlocked[n.id]) this.gridlockEvents++; this.gridlockNodeS += dtCheck; }
+      this.gridlocked[n.id] = g ? 1 : 0;
+    }
   }
 
   /** debug invariant checks used by tests */

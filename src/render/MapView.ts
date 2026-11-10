@@ -175,6 +175,19 @@ export class MapView {
         g.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({ width: 0.6, color: c === 'R' || c === 'Y' ? 0xffffff : 0xdddddd, alpha: 0.8 });
       }
     }
+    // junctions run without signals: dark heads (off), blinking amber (flash), white yield triangles (all-way)
+    const blink = Math.floor(performance.now() / 500) % 2 === 0;
+    for (const [id, um] of s.umodes ?? []) {
+      const n = this.net.nodes[id];
+      for (const li of n.inLinks) {
+        const L = this.net.links[li]; if (L.closed || !L.outMoves.length) continue;
+        this.net.pointAt(L, L.stopS, this.net.offsetOf(L, L.width + 0.8), p);
+        g.rect(p.x - 1.2, p.y - 1.2, 2.4, 2.4).fill({ color: 0x111111 });
+        if (um === 1) { g.rect(p.x - 0.8, p.y - 0.8, 1.6, 1.6).fill({ color: 0x3a3a3a }); g.moveTo(p.x - 0.7, p.y - 0.7).lineTo(p.x + 0.7, p.y + 0.7).moveTo(p.x + 0.7, p.y - 0.7).lineTo(p.x - 0.7, p.y + 0.7).stroke({ width: 0.3, color: 0x999999 }); }
+        else if (um === 2) { g.rect(p.x - 0.8, p.y - 0.8, 1.6, 1.6).fill({ color: blink ? 0xffb000 : 0x4a3a00 }); if (blink && this.layers.night) g.circle(p.x, p.y, 3).fill({ color: 0xffb000, alpha: 0.3 }); }
+        else { g.poly([p.x - 1, p.y - 0.8, p.x + 1, p.y - 0.8, p.x, p.y + 1]).fill({ color: 0xffffff }).stroke({ width: 0.3, color: 0xff3b30 }); }
+      }
+    }
   }
 
   private drawVehicles(s: Snapshot) {
