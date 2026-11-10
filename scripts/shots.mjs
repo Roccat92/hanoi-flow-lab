@@ -16,6 +16,8 @@ const shots = [
   ['nosignal-gridlock', '?scenario=extreme&controller=nosignal&speed=16', 50000, 'jam'],
   ['optimal-map', '?scenario=morning&controller=optimal&speed=4', 15000, 'modes'],
   ['results', '?scenario=morning&results=1', 4000, 'results'],
+  ['bus-stop', '?scenario=morning&controller=ai&speed=4&bus=1', 70000, 'bus'],
+  ['truck-unload', '?scenario=normal&controller=ai&speed=4', 60000, 'truck'],
 ];
 const only = process.argv[3];
 const browser = await puppeteer.launch({ executablePath: '/usr/bin/google-chrome', headless: 'new', args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--window-size=1600,900'] });
@@ -47,7 +49,7 @@ for (const [name, q, wait, action] of shots) {
     // busiest signalised junction by queued vehicles, then zoom right in
     await page.evaluate((a) => {
       const v = window.__views[window.__views.length - 1]; const s = v.lastSnap; let best = null, bs = -1;
-      for (const n of v.net.nodes) { if (!n.signal && a !== 'alley') continue; let c = 0; for (let i = 0; i < s.n; i++) { const d = Math.hypot(s.veh[i * 7] - n.x, s.veh[i * 7 + 1] - n.y); if (d < 35) c++; }
+      for (const n of v.net.nodes) { if (!n.signal && a !== 'alley') continue; let c = 0; for (let i = 0; i < s.n; i++) { const d = Math.hypot(s.veh[i * 9] - n.x, s.veh[i * 9 + 1] - n.y); if (d < 35) c++; }
         if (a === 'alley') { const al = [...n.inLinks, ...n.outLinks].filter(l => v.net.links[l].alley).length; c = c * (al >= 2 ? 1 : 0) + al; }
         if (a === 'peds' && s.peds) { for (let i = 0; i < s.np; i++) if (Math.hypot(s.peds[i * 4] - n.x, s.peds[i * 4 + 1] - n.y) < 30) c += 6; }
         if (c > bs) { bs = c; best = n; } }
@@ -60,7 +62,7 @@ for (const [name, q, wait, action] of shots) {
     // the physically signalised junction with the most stopped vehicles around it
     await page.evaluate(() => {
       const v = window.__views[window.__views.length - 1]; const s = v.lastSnap; let best = null, bs = -1;
-      for (const n of v.net.nodes) { if (!n.signal) continue; let c = 0; for (let i = 0; i < s.n; i++) { if (!(s.veh[i * 7 + 6] & 1)) continue; if (Math.hypot(s.veh[i * 7] - n.x, s.veh[i * 7 + 1] - n.y) < 45) c++; } if (c > bs) { bs = c; best = n; } }
+      for (const n of v.net.nodes) { if (!n.signal) continue; let c = 0; for (let i = 0; i < s.n; i++) { if (!(s.veh[i * 9 + 6] & 1)) continue; if (Math.hypot(s.veh[i * 9] - n.x, s.veh[i * 9 + 1] - n.y) < 45) c++; } if (c > bs) { bs = c; best = n; } }
       if (best) v.focus(best.x, best.y, 3.2);
     });
     await new Promise(r => setTimeout(r, 4000));
@@ -68,6 +70,26 @@ for (const [name, q, wait, action] of shots) {
   if (action === 'modes') {
     await page.evaluate(() => { const v = window.__views[window.__views.length - 1]; const n = v.net.nodes.filter(n => n.signal); const x = n.reduce((a, b) => a + b.x, 0) / n.length, y = n.reduce((a, b) => a + b.y, 0) / n.length; v.focus(x, y, 0.62); });
     await new Promise(r => setTimeout(r, 3000));
+  }
+  if (action === 'bus' || action === 'truck') {
+    // a bus with open doors at a stop where passengers wait / board (or a double-parked truck), then select it for the inspector
+    const flag = action === 'bus' ? 16 : 32;
+    await page.waitForFunction((flag) => {
+      const v = window.__views[window.__views.length - 1]; const s = v.lastSnap; if (!s) return false;
+      for (let i = 0; i < s.n; i++) { if (!(s.veh[i * 9 + 6] & flag)) continue;
+        if (flag === 32) { if (((s.veh[i * 9 + 6] | 0) >> 8) === 0) return true; continue; }
+        for (let k = 0; k < v.busStopsGeo.length; k++) { const st = v.busStopsGeo[k]; if (s.stopWait[k * 2 + 1] > 0 && s.stopWait[k * 2] >= 3 && Math.hypot(st.x - s.veh[i * 9], st.y - s.veh[i * 9 + 1]) < 16) return true; } }
+      return false;
+    }, { timeout: 240000, polling: 200 }, flag);
+    await page.evaluate((flag) => {
+      const v = window.__views[window.__views.length - 1]; const s = v.lastSnap;
+      for (let i = 0; i < s.n; i++) { if (!(s.veh[i * 9 + 6] & flag)) continue;
+        let ok = flag === 32 && ((s.veh[i * 9 + 6] | 0) >> 8) === 0; for (let k = 0; !ok && k < v.busStopsGeo.length; k++) { const st = v.busStopsGeo[k]; if (s.stopWait[k * 2 + 1] > 0 && s.stopWait[k * 2] >= 3 && Math.hypot(st.x - s.veh[i * 9], st.y - s.veh[i * 9 + 1]) < 16) ok = true; }
+        if (!ok) continue;
+        v.focus(s.veh[i * 9], s.veh[i * 9 + 1], 9); v.selected = { kind: 'veh', id: s.veh[i * 9 + 5] | 0 }; v.onPick?.('veh', s.veh[i * 9 + 5] | 0); break; }
+    }, flag);
+    await page.evaluate(() => { const v = window.__views[window.__views.length - 1]; v.app.ticker.speed = 1; });
+    await new Promise(r => setTimeout(r, 700));
   }
   if (action === 'results') {
     await page.waitForSelector('.modal .cmp', { timeout: 30000 });

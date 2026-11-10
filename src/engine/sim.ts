@@ -510,8 +510,8 @@ export class Simulation {
         const L = this.net.links[st.link];
         let sPos = Math.min(L.stopS - 4, Math.max(L.startS + 14, st.s));
         for (let it = 0; it < 3 && !this.kerbClearOfZebra(st.link, sPos, 12); it++) {
-          const z = (this.zebrasOnLink.get(st.link) ?? []).find(z => { const zs = z.link === st.link ? z.sL : z.sT; return zs > sPos - 16 && zs < sPos + 4; })!;
-          sPos = (z.link === st.link ? z.sL : z.sT) - 4.5; // stop just before the crossing
+          const z = (this.zebrasOnLink.get(st.link) ?? []).find(z => { const zs = z.link === st.link ? z.sL : z.sT; return zs > sPos - 16 && zs < sPos + 7; })!;
+          sPos = (z.link === st.link ? z.sL : z.sT) - 7.5; // stop just before the crossing
         }
         if (sPos < L.startS + 14 || !this.kerbClearOfZebra(st.link, sPos, 12)) continue;
         const k = st.link + ':' + Math.round(sPos / 20);
@@ -527,8 +527,8 @@ export class Simulation {
       ln.stops.sort((a, b) => a.pi - b.pi || a.s - b.s);
       ln.lastDep = new Float64Array(ln.stops.length).fill(-1);
       this.lines.push(ln);
-      // warm start: the previous bus of the line is already somewhere on the route (about one headway ahead at ~12 km/h)
-      const d0 = this.busRng.next() * hw * 3.3;
+      // warm start: the previous bus departed one headway before the first timetable bus, so it is already (hw - nextT) * ~12 km/h along the route
+      const d0 = (hw - ln.nextT) * 3.3;
       if (d0 < len) {
         let cum = 0, k = 0; while (k < path.length - 1 && cum + this.net.links[path[k]].len < d0) { cum += this.net.links[path[k]].len; k++; }
         if (k > 0) { const b = this.makeBus(ln); b.pi = k; while (b.si < ln.stops.length && ln.stops[b.si].pi < k) b.si++; this.warm.push([path[k], b]); }
@@ -591,7 +591,7 @@ export class Simulation {
   }
   /** a kerb stop with the front at s must not leave the body (len) on a zebra crossing */
   private kerbClearOfZebra(link: number, s: number, len: number) {
-    for (const z of this.zebrasOnLink.get(link) ?? []) { const zs = z.link === link ? z.sL : z.sT; if (zs > s - len - 4 && zs < s + 4) return false; }
+    for (const z of this.zebrasOnLink.get(link) ?? []) { const zs = z.link === link ? z.sL : z.sT; if (zs > s - len - 4 && zs < s + 7) return false; }
     return true;
   }
   queuedCount() { let n = this.warm.length; for (const s of this.sources) n += s.queue.length; for (const l of this.lines) n += l.queue.length; return n; }

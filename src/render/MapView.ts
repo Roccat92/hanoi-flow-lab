@@ -77,7 +77,7 @@ export class MapView {
       const col = parseInt((l.colour || '#1e88e5').replace('#', '').padEnd(6, '0').slice(0, 6), 16) || 0x1e88e5; const pts = l.pts; if (pts.length < 4) return;
       const off = (i % 5 - 2) * 0.5; // small offsets so overlapping lines stay visible
       g.moveTo(pts[0] + off, pts[1] + off); for (let k = 2; k < pts.length; k += 2) g.lineTo(pts[k] + off, pts[k + 1] + off);
-      g.stroke({ width: l.inferred ? 1.1 : 1.6, color: col, alpha: 0.75, cap: 'round', join: 'round' });
+      g.stroke({ width: l.inferred ? 0.7 : 1.0, color: col, alpha: 0.55, cap: 'round', join: 'round' });
     });
   }
 

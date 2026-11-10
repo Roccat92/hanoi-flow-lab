@@ -152,6 +152,56 @@ SUMO **không** xác nhận kết quả "không đèn": tắt đèn toàn bộ l
 
 Số liệu: `results/EXPERIMENTS.md`, `results/experiments.json`, `results/optimize.json`, `results/rules.json`. Chạy lại: `npx tsx scripts/optimize.ts && npx tsx scripts/derive_rules.ts && npx tsx scripts/experiments.ts`.
 
+## Xe buýt theo tuyến và xe tải
+
+**Xe buýt** chạy theo **tuyến thật**: 48 tuyến lấy từ các quan hệ OSM `route=bus` có trong tile OSM API đã lưu (`scripts/import_bus_lines.py` -> `public/data/bus_lines.json`). Overpass bị lỗi 504 nên không dùng được.
+- Mỗi tuyến được khớp lên mạng đường của mô phỏng; chỉ giữ tuyến khớp ít nhất 75 % chiều dài. Tuyến không bao giờ đi vào ngõ. Tuyến bị cắt ở biên vùng thì đi tiếp theo đường ngắn nhất ra cửa gần nhất.
+- Giãn cách lấy từ tag `interval` của OSM: giờ cao điểm dùng giá trị ngắn, giờ khác dùng giá trị dài. Tuyến không có tag thì dùng 15-20 phút và được đánh dấu là suy luận (`headwayInferred`). Mỗi chuyến lệch ±20 % so với lịch.
+- **Khách** đến từng điểm dừng theo quá trình Poisson riêng cho từng tuyến. Mức đến là giả định: 30 khách/h sáng, 28 chiều, 14 trưa, vì không có số liệu đi xe công khai.
+- Số khách xuống ở mỗi điểm theo phân phối nhị thức 14 %. Sức chứa 80.
+- **Thời gian dừng** = 6 + max(2.0 s × khách lên, 1.4 s × khách xuống), nhân ngẫu nhiên 0.85-1.2.
+- Lịch chạy và khách đến dùng luồng ngẫu nhiên riêng, mỗi xe buýt có luồng riêng. Vì vậy cùng seed thì giống hệt nhau ở mọi bộ điều khiển (có test kiểm tra).
+- Hành vi:
+  - Còn khoảng 70 m thì **tạt mạnh sang lề phải**, cắt qua dòng xe máy; xe phía sau phải phanh hoặc lách. Kiểm tra chống chồng lấn vẫn giữ, chỉ thu hẹp khoảng an toàn với xe phía sau.
+  - Nếu lề bị chiếm (xe buýt khác, xe tải đỗ) thì **dừng giữa làn**.
+  - Xe buýt đến sau xe buýt đang dừng thì mở cửa ngay ở vị trí thứ hai.
+  - Xong thì **ép vào lại làn** trong 25 s.
+  - Không có ai lên xuống thì đi qua điểm dừng.
+  - **Khách vẫy dọc đường**: mỗi đoạn có xác suất 4 % (chỉnh được trên giao diện).
+  - Điểm dừng được dời ra khỏi vạch đi bộ.
+- Hiển thị: người chờ ở điểm dừng, người bước lên xe khi xe đang dừng, đèn xi-nhan khi tạt vào lề, cửa mở. Lớp **Tuyến buýt** vẽ các tuyến theo màu OSM.
+
+**Xe tải** chia 4 loại, mỗi loại có kích thước, gia tốc và hàng hoá riêng: giao hàng 55 %, tải nặng 25 %, xe ben công trình 12 %, xe rác 8 %.
+- Khoảng cách theo xe lớn hơn: T 1.6 s, s0 2.5 m.
+- Không vào ngõ (có test kiểm tra).
+- **GIẢ ĐỊNH**: giờ cao điểm sáng và chiều không cho xe tải nặng và xe ben vào nội đô, đổi thành xe giao hàng. Đây là quy định của Hà Nội đã được đơn giản hoá và có thể tắt.
+- Xe giao hàng có xác suất 6 % mỗi đoạn **đỗ chiếm làn bốc dỡ 2-8 phút**, tối đa một lần mỗi chuyến. Xe rác dừng ngắn 20-60 s.
+- Xe buýt và xe tải **rẽ rộng**: đang ở 60 % đầu của hướng rẽ thì các hướng khác cùng nhánh vào phải chờ, trừ xe máy lách được.
+
+**Ưu tiên buýt (TSP)**: đây là tuỳ chọn cho AI v2. Khi bật, xe buýt được tính theo số khách (2.5 + 0.1 × khách PCU), và đèn xanh kéo dài tối đa thêm 15 s nếu xe buýt sắp tới vạch.
+
+**So sánh nhanh** (engine TS, 30 phút, seed 1-3, trung bình mỗi lần chạy; `scripts/bus_compare.ts`, số liệu đầy đủ ở `results/BUS.md`):
+
+| Biến thể | Giờ-xe mất sáng | Giờ-xe mất chiều | Buýt km/h sáng | Buýt km/h chiều | Khách chờ s (sáng / chiều) | Dồn chuyến % | Dừng giữa làn | Xe tải đỗ bốc dỡ |
+|---|---|---|---|---|---|---|---|---|
+| Cố định | 271.3 | 468.9 | 14.1 | 11.5 | 438 / 450 | 0.3 / 0.6 | 46 / 44 | 53 / 51 |
+| Cảm biến | 252.8 | 415.3 | 14.8 | 12.6 | 438 / 438 | 0.1 / 0.3 | 46 / 53 | 54 / 53 |
+| AI v2 | 253.7 | 399.4 | 14.5 | 12.6 | 425 / 436 | 0.0 / 0.2 | 49 / 53 | 47 / 63 |
+| AI v2 + TSP | 265.8 | 435.2 | 15.0 | 11.8 | 429 / 431 | 0.0 / 0.6 | 51 / 50 | 46 / 49 |
+| Chỉ nút lớn có đèn | 231.1 | 340.2 | 15.5 | 12.8 | 424 / 438 | 0.1 / 0.6 | 46 / 48 | 57 / 56 |
+| Tối ưu | 226.1 | 331.5 | 14.9 | 13.1 | 434 / 439 | 0.0 / 0.2 | 51 / 52 | 54 / 67 |
+| AI v2, đối chứng không buýt tuyến / không xe tải đỗ | 196.1 | 337.4 | - | - | 0 / 0 | 0.0 / 0.0 | 0 / 0 | 17 / 13 |
+
+Nhận xét trung thực:
+- Hành vi xe buýt và xe tải làm giờ-xe mất của AI v2 tăng khoảng 29 % buổi sáng (254 so với 196) và 18 % buổi chiều (399 so với 337) so với bản đối chứng.
+- TSP **không** cho lợi ích rõ ràng với 3 seed:
+  - Sáng: xe buýt nhanh hơn 0.5 km/h nhưng tổng giờ-xe mất tăng.
+  - Chiều: cả hai đều xấu hơn.
+  - Đây là chênh lệch nằm trong mức nhiễu, chưa kết luận được.
+- Thứ hạng các chế độ đèn vẫn giữ: "tối ưu" và "chỉ nút lớn" tốt nhất trong engine TS. Lưu ý SUMO không xác nhận ưu thế của chế độ không đèn (xem phần trên).
+- Dồn chuyến gần như bằng 0 trong 30 phút, vì một xe buýt chỉ đi qua vùng mất khoảng 10 phút. Muốn thấy dồn chuyến cần chạy dài hơn.
+- Thời gian khách chờ khoảng 7 phút. Con số này chủ yếu do giãn cách giả định và theo từng tuyến (khách đợi đúng tuyến của mình).
+
 ## Benchmark (đo trên máy build: Intel Xeon, Node 24, dt = 0.5 s)
 
 | Số xe trong mạng | ms/bước | bước/s | nhanh hơn thời gian thực |
@@ -190,6 +240,8 @@ python backend/compare_sumo.py morning 30 1,2,3
 Tham số URL: `scenario`, `controller` (fixed/actuated/ai), `seed`, `demand`, `speed`, `layer=heat|density`, `night=1`, `quality=low`, `view=split`, `compare=1`, `cap` (giới hạn số xe), `chaos` (0-1), `crash=0` (tắt va quẹt), `crashRate` (lần/giờ), `editor=1`, `edits` (JSON), `results=1`, controller thêm `nosignal`, `major`, `flash`, `allway`, `optimal`, `backend`.
 
 ## Ảnh chụp
+
+- `shots/bus-stop.png`: xe buýt tuyến 23 tạt vào lề đón khách, có người chờ và lớp tuyến buýt. `shots/truck-unload.png`: xe tải giao hàng đỗ chiếm làn bốc dỡ (thùng hàng trên vỉa hè, đèn khẩn cấp).
 
 `shots/normal.png`, `shots/heatmap.png`, `shots/night.png`, `shots/split.png`, `shots/comparison.png`, `shots/inspect.png`, `shots/closeup.png` (cận cảnh hỗn loạn), `shots/pedestrians.png`, `shots/crash.png` (va quẹt), `shots/editor.png`, `shots/alleys.png` (ngõ), `shots/nosignal-gridlock.png` (không đèn, tắc cực đoan), `shots/optimal-map.png` (bản đồ chế độ từng nút), `shots/results.png` (trang kết quả).
 
