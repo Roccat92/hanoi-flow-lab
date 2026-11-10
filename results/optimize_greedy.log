@@ -1,0 +1,19 @@
+baseline fixed 1661.1 1520.6 14049
+baseline actuated 1514.9 1378.2 13667
+baseline ai 1609.2 1471.9 13728
+baseline nosignal 1259.8 1069.2 19055
+baseline major 1336.5 1181.2 15532
+baseline flash 1406.2 1208.4 19783
+baseline allway 1825.9 1657.8 16806
+start from nosignal 1259.8
+pass 1: 16 improving single changes 88->flash 50.5, 18->ai 48.3, 324->flash 48.2, 452->ai 32.0, 1397->actuated 31.9, 114->flash 28.9, 135->ai 26.6, 1573->flash 24.3 9.4 min
+  try 88->flash: 1209.2 vs 1259.8 ACCEPT
+  try 18->ai: 1280.4 vs 1209.2 reject
+  try 324->flash: 1265.2 vs 1209.2 reject
+  try 452->ai: 1256.1 vs 1209.2 reject
+  try 1397->actuated: 1300.3 vs 1209.2 reject
+  try 114->flash: 1264.7 vs 1209.2 reject
+  try 135->ai: 1352.9 vs 1209.2 reject
+  try 1573->flash: 1279.4 vs 1209.2 reject
+  try 106->actuated: 1296.6 vs 1209.2 reject
+  try 308->actuated: 1285.4 vs 1209.2 reject

@@ -21,7 +21,16 @@ const opt = existsSync('results/optimize.json') ? JSON.parse(readFileSync('resul
 const rules = existsSync('results/rules.json') ? JSON.parse(readFileSync('results/rules.json', 'utf8')) : null;
 const out: any = { generated: new Date().toISOString().slice(0, 16).replace('T', ' ') + ' UTC', seeds: SEEDS, minutes: MIN, kinds: KINDS, scenarios: SC, table };
 if (opt && rules) out.optimal = { modes: opt.modes, names: rules.names, rules: rules.rules, counts: rules.counts, train: `seed ${opt.trainSeeds.join(', ')} x ${opt.trainScenarios.join(', ')}, ${opt.minutes} phút`, objective: 'tổng giờ-xe mất + 0.01 x số lần suýt va chạm' };
-out.notes = rules?.notes ?? [];
+out.notes = [...(rules?.notes ?? [])];
+{ // safety weight at which signals (AI v2 everywhere) and the optimal / no-signal configurations break even, from the held-out totals
+  const T = (k: string, m: string) => SC.reduce((a, sc) => a + table[sc][k][m], 0);
+  for (const k of ['nosignal', 'optimal', 'major']) {
+    const dv = T('ai', 'vehH') - T(k, 'vehH'), dn = T(k, 'nm') - T('ai', 'nm');
+    if (dv > 0 && dn > 0) out.notes.push(`Hệ số an toàn hoà vốn ${LBL[k]} so với AI v2: ${(dv / dn * 3600).toFixed(0)} giây trễ cho mỗi lần suýt va chạm. Nếu một lần suýt va chạm được coi là tệ hơn mức đó, AI v2 ở mọi nút thắng.`);
+    else if (dv > 0) out.notes.push(`${LBL[k]} vừa ít giờ-xe mất hơn vừa không nhiều suýt va chạm hơn AI v2 trên seed kiểm tra.`);
+    else out.notes.push(`${LBL[k]} không ít giờ-xe mất hơn AI v2 trên seed kiểm tra.`);
+  }
+}
 writeFileSync('results/experiments.json', JSON.stringify({ ...out, raw }, null, 1));
 writeFileSync('public/data/experiments.json', JSON.stringify(out));
 const f = (x: number, d = 1) => x.toFixed(d);

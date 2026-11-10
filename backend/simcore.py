@@ -20,6 +20,13 @@ MIN_GREEN, MAX_GREEN_AI, YELLOW, ALL_RED, MAX_RED = 8, 90, 3, 2, 120
 H_PRED, K_COST, GAP = 12, 2.5, 2.5  # same constants as AiCoordinated v2 in src/engine/controllers.ts
 
 
+RANK = {'trunk': 5, 'primary': 4, 'secondary': 3, 'tertiary': 2, 'unclassified': 1, 'residential': 1, 'alley': 0}
+def ts_is_major(nid):
+    """same rule as isMajor() in src/engine/modes.ts"""
+    big = [L for L in MAP['links'] if L['to'] == nid and RANK.get(L['cls'], 1) >= 3]
+    return len(big) >= 3 and len({L['name'] for L in big}) >= 2
+
+
 def net_path(controller):
     return os.path.join(HERE, 'sumo', f"dongda_{'actuated' if controller == 'actuated' else 'static'}.net.xml")
 
@@ -151,9 +158,19 @@ class SumoSim:
                      '--seed', str(cfg.get('seed', 42)), '--time-to-teleport', '-1', '--no-step-log', 'true', '--no-warnings', 'true',
                      '--ignore-route-errors', 'true', '--collision.action', 'warn', '--device.rerouting.probability', '1', '--device.rerouting.period', '60'], label=label)
         self.conn = traci.getConnection(label); traci.switch(label)
-        self.ai = [AiTls(t) for t in traci.trafficlight.getIDList()] if self.ctrl == 'ai' else []
-        self.ai_by = {a.id: a for a in self.ai}
         self.build_signal_map()
+        tls = traci.trafficlight.getIDList()
+        if self.ctrl in ('nosignal', 'flash', 'major'):
+            # SUMO program "off": the junction runs on priority rules (minor road yields) - SUMO has no model of Vietnamese negotiation, so no-signal and flashing amber are the same here
+            keep = set()
+            if self.ctrl == 'major':
+                keep = {tid for nid, (tid, _) in self.sig_map.items() if ts_is_major(nid)}
+            for tid in tls:
+                if tid not in keep: traci.trafficlight.setProgram(tid, 'off')
+            self.ai = [AiTls(t) for t in tls if t in keep]
+        else:
+            self.ai = [AiTls(t) for t in tls] if self.ctrl == 'ai' else []
+        self.ai_by = {a.id: a for a in self.ai}
         self.t = 0.0; self.completed = 0; self.timeloss = {}; self.depart = {}; self.done = []; self.sum_delay = 0.0; self.sum_tt = 0.0
         self.series = []; self.incident_lanes = []; self.inc_on = False
         if self.sc['incident']:

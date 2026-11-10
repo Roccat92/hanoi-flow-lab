@@ -34,7 +34,8 @@ function snapshot() {
     const n = sim.net.nodes[id];
     signals.push({ id, phase: st.phase, stage: st.stage, t: st.tStage, colors: n.moves.map(m => sim.sigColor(m)).join('') });
   }
-  const umodes: [number, number][] = []; for (const id of sim.sigNodes) if (sim.uMode[id]) umodes.push([id, sim.uMode[id]]);
+  const umodes: [number, number][] = []; const SIGC: Record<string, number> = { fixed: 4, actuated: 5, ai: 6 };
+  for (const id of sim.sigNodes) umodes.push([id, sim.uMode[id] || SIGC[sim.nodeMode.get(id) ?? 'ai'] || 6]);
   let np = 0; for (const z of sim.zebras) np += z.walkers.length;
   const peds = new Float32Array(np * PSTRIDE); let j = 0;
   for (const z of sim.zebras) for (let i = 0; i < z.walkers.length; i++) {

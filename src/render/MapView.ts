@@ -177,8 +177,12 @@ export class MapView {
     }
     // junctions run without signals: dark heads (off), blinking amber (flash), white yield triangles (all-way)
     const blink = Math.floor(performance.now() / 500) % 2 === 0;
+    const RING = [0, 0x8a8a8a, 0xffa24f, 0xffffff, 0xff7b5c, 0xffd23f, 0x4fe3ff];
     for (const [id, um] of s.umodes ?? []) {
       const n = this.net.nodes[id];
+      // mode ring, readable at city zoom (control-mode map)
+      g.circle(n.x, n.y, n.radius + 6).stroke({ width: 2.2, color: RING[um] ?? 0xffffff, alpha: um === 2 && !blink ? 0.45 : 0.9 });
+      if (um >= 4) continue;
       for (const li of n.inLinks) {
         const L = this.net.links[li]; if (L.closed || !L.outMoves.length) continue;
         this.net.pointAt(L, L.stopS, this.net.offsetOf(L, L.width + 0.8), p);

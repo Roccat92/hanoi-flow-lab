@@ -1,0 +1,1214 @@
+{
+ "trainSeeds": [
+  11,
+  12,
+  13
+ ],
+ "trainScenarios": [
+  "morning",
+  "evening",
+  "incident"
+ ],
+ "minutes": 30,
+ "objective": "sum vehH + 0.01*nearMiss",
+ "baselines": {
+  "fixed": {
+   "J": 2468.31,
+   "vehH": 2259.2,
+   "nm": 20911,
+   "per": [
+    216,
+    224.5,
+    226.8,
+    401.9,
+    369.2,
+    347.4,
+    146.2,
+    162.8,
+    164.4
+   ]
+  },
+  "actuated": {
+   "J": 2243.49,
+   "vehH": 2042,
+   "nm": 20149,
+   "per": [
+    212.3,
+    197.3,
+    179.5,
+    349.3,
+    307.2,
+    336.8,
+    154,
+    158.1,
+    147.5
+   ]
+  },
+  "ai": {
+   "J": 2319.4700000000003,
+   "vehH": 2115.8,
+   "nm": 20367,
+   "per": [
+    228.6,
+    197.9,
+    180.3,
+    422.7,
+    331.4,
+    326.7,
+    148.2,
+    143.1,
+    136.9
+   ]
+  },
+  "nosignal": {
+   "J": 1914.79,
+   "vehH": 1633.3999999999999,
+   "nm": 28139,
+   "per": [
+    157.9,
+    137.5,
+    142.4,
+    282.6,
+    279.7,
+    316.5,
+    114.6,
+    96.9,
+    105.3
+   ]
+  },
+  "major": {
+   "J": 1933.64,
+   "vehH": 1699.8000000000002,
+   "nm": 23384,
+   "per": [
+    193.7,
+    142.9,
+    148.7,
+    309.1,
+    280.6,
+    265.7,
+    133.5,
+    121.4,
+    104.2
+   ]
+  },
+  "flash": {
+   "J": 2150.79,
+   "vehH": 1856.3999999999999,
+   "nm": 29439,
+   "per": [
+    143.5,
+    145.4,
+    130,
+    336.2,
+    336.7,
+    388,
+    127.8,
+    118.8,
+    130
+   ]
+  },
+  "allway": {
+   "J": 2747.7799999999997,
+   "vehH": 2491.7999999999997,
+   "nm": 25598,
+   "per": [
+    246.2,
+    222.9,
+    234.6,
+    385.5,
+    416.5,
+    419.7,
+    198.2,
+    188.5,
+    179.7
+   ]
+  }
+ },
+ "policies": [
+  {
+   "name": "major:actuated, else off",
+   "desc": {
+    "rule": "major",
+    "sigM": "actuated",
+    "minor": "off"
+   },
+   "J": 1906.33,
+   "vehH": 1681.3,
+   "nm": 22503,
+   "per": [
+    163.9,
+    147.8,
+    154.8,
+    259.9,
+    315.1,
+    311.8,
+    103,
+    109.4,
+    115.6
+   ],
+   "signals": 10
+  },
+  {
+   "name": "flow>=Infinity:ai, else off",
+   "desc": {
+    "rule": "flow",
+    "theta": null,
+    "sigM": "ai",
+    "minor": "off"
+   },
+   "J": 1914.79,
+   "vehH": 1633.3999999999999,
+   "nm": 28139,
+   "per": [
+    157.9,
+    137.5,
+    142.4,
+    282.6,
+    279.7,
+    316.5,
+    114.6,
+    96.9,
+    105.3
+   ],
+   "signals": 0
+  },
+  {
+   "name": "flow>=Infinity:actuated, else off",
+   "desc": {
+    "rule": "flow",
+    "theta": null,
+    "sigM": "actuated",
+    "minor": "off"
+   },
+   "J": 1914.79,
+   "vehH": 1633.3999999999999,
+   "nm": 28139,
+   "per": [
+    157.9,
+    137.5,
+    142.4,
+    282.6,
+    279.7,
+    316.5,
+    114.6,
+    96.9,
+    105.3
+   ],
+   "signals": 0
+  },
+  {
+   "name": "major:ai, else off",
+   "desc": {
+    "rule": "major",
+    "sigM": "ai",
+    "minor": "off"
+   },
+   "J": 1933.64,
+   "vehH": 1699.8000000000002,
+   "nm": 23384,
+   "per": [
+    193.7,
+    142.9,
+    148.7,
+    309.1,
+    280.6,
+    265.7,
+    133.5,
+    121.4,
+    104.2
+   ],
+   "signals": 10
+  },
+  {
+   "name": "major:actuated, else flash",
+   "desc": {
+    "rule": "major",
+    "sigM": "actuated",
+    "minor": "flash"
+   },
+   "J": 1948.77,
+   "vehH": 1720.3,
+   "nm": 22847,
+   "per": [
+    167.8,
+    150.5,
+    147.6,
+    313.6,
+    283.1,
+    274.5,
+    116.3,
+    110.9,
+    156
+   ],
+   "signals": 10
+  },
+  {
+   "name": "flow>=1212:ai, else flash",
+   "desc": {
+    "rule": "flow",
+    "theta": 1212,
+    "sigM": "ai",
+    "minor": "flash"
+   },
+   "J": 1989.58,
+   "vehH": 1774.6,
+   "nm": 21498,
+   "per": [
+    144,
+    157.5,
+    158.9,
+    283.8,
+    342.8,
+    307.1,
+    127.1,
+    122.5,
+    130.9
+   ],
+   "signals": 12
+  },
+  {
+   "name": "major:ai, else flash",
+   "desc": {
+    "rule": "major",
+    "sigM": "ai",
+    "minor": "flash"
+   },
+   "J": 2005.4700000000003,
+   "vehH": 1777.8000000000002,
+   "nm": 22767,
+   "per": [
+    151.4,
+    166.5,
+    153.8,
+    307.6,
+    314.2,
+    355.9,
+    119.7,
+    104.2,
+    104.5
+   ],
+   "signals": 10
+  },
+  {
+   "name": "flow>=1524:ai, else flash",
+   "desc": {
+    "rule": "flow",
+    "theta": 1524,
+    "sigM": "ai",
+    "minor": "flash"
+   },
+   "J": 2033.9599999999998,
+   "vehH": 1802.6999999999998,
+   "nm": 23126,
+   "per": [
+    147.1,
+    155.3,
+    208,
+    310.7,
+    310,
+    304.5,
+    140.8,
+    119.5,
+    106.8
+   ],
+   "signals": 8
+  },
+  {
+   "name": "flow>=2577:actuated, else off",
+   "desc": {
+    "rule": "flow",
+    "theta": 2577,
+    "sigM": "actuated",
+    "minor": "off"
+   },
+   "J": 2033.9699999999998,
+   "vehH": 1773.6999999999998,
+   "nm": 26027,
+   "per": [
+    182.8,
+    138.4,
+    150.1,
+    332.9,
+    299.3,
+    290.8,
+    132.7,
+    131.6,
+    115.1
+   ],
+   "signals": 2
+  },
+  {
+   "name": "flow>=2028:ai, else off",
+   "desc": {
+    "rule": "flow",
+    "theta": 2028,
+    "sigM": "ai",
+    "minor": "off"
+   },
+   "J": 2044.7500000000005,
+   "vehH": 1810.1000000000004,
+   "nm": 23465,
+   "per": [
+    161.4,
+    142.6,
+    143.6,
+    363.3,
+    353.9,
+    287.9,
+    124.7,
+    111.5,
+    121.2
+   ],
+   "signals": 5
+  },
+  {
+   "name": "flow>=1212:ai, else off",
+   "desc": {
+    "rule": "flow",
+    "theta": 1212,
+    "sigM": "ai",
+    "minor": "off"
+   },
+   "J": 2058.76,
+   "vehH": 1847,
+   "nm": 21176,
+   "per": [
+    172.7,
+    167.5,
+    139.6,
+    310.5,
+    317.7,
+    304.9,
+    121.8,
+    128.3,
+    184
+   ],
+   "signals": 12
+  },
+  {
+   "name": "flow>=2028:actuated, else off",
+   "desc": {
+    "rule": "flow",
+    "theta": 2028,
+    "sigM": "actuated",
+    "minor": "off"
+   },
+   "J": 2061.57,
+   "vehH": 1831,
+   "nm": 23057,
+   "per": [
+    158.7,
+    161.6,
+    143.5,
+    318.6,
+    332.1,
+    338.8,
+    139.4,
+    116.1,
+    122.2
+   ],
+   "signals": 5
+  },
+  {
+   "name": "flow>=1524:ai, else off",
+   "desc": {
+    "rule": "flow",
+    "theta": 1524,
+    "sigM": "ai",
+    "minor": "off"
+   },
+   "J": 2066.6600000000003,
+   "vehH": 1844.3000000000002,
+   "nm": 22236,
+   "per": [
+    161.7,
+    152.2,
+    167.5,
+    326.4,
+    371.1,
+    309,
+    137,
+    105.4,
+    114
+   ],
+   "signals": 8
+  },
+  {
+   "name": "flow>=1212:actuated, else off",
+   "desc": {
+    "rule": "flow",
+    "theta": 1212,
+    "sigM": "actuated",
+    "minor": "off"
+   },
+   "J": 2087,
+   "vehH": 1878.6000000000001,
+   "nm": 20840,
+   "per": [
+    162.9,
+    159.3,
+    158.5,
+    344.1,
+    314.6,
+    336.2,
+    135.2,
+    131.2,
+    136.6
+   ],
+   "signals": 12
+  },
+  {
+   "name": "flow>=1524:actuated, else off",
+   "desc": {
+    "rule": "flow",
+    "theta": 1524,
+    "sigM": "actuated",
+    "minor": "off"
+   },
+   "J": 2094.4700000000003,
+   "vehH": 1867.6000000000001,
+   "nm": 22687,
+   "per": [
+    151,
+    174,
+    140.3,
+    316.1,
+    340.8,
+    338.3,
+    137.3,
+    135.4,
+    134.4
+   ],
+   "signals": 8
+  },
+  {
+   "name": "flow>=1013:ai, else flash",
+   "desc": {
+    "rule": "flow",
+    "theta": 1013,
+    "sigM": "ai",
+    "minor": "flash"
+   },
+   "J": 2107.46,
+   "vehH": 1895.1,
+   "nm": 21236,
+   "per": [
+    195.9,
+    169.5,
+    171.1,
+    326,
+    303.3,
+    344.5,
+    140.3,
+    123,
+    121.5
+   ],
+   "signals": 16
+  },
+  {
+   "name": "flow>=1212:actuated, else flash",
+   "desc": {
+    "rule": "flow",
+    "theta": 1212,
+    "sigM": "actuated",
+    "minor": "flash"
+   },
+   "J": 2110.49,
+   "vehH": 1897.3999999999999,
+   "nm": 21309,
+   "per": [
+    161.3,
+    158.2,
+    172.2,
+    312.6,
+    313.7,
+    395.2,
+    127.5,
+    124.1,
+    132.6
+   ],
+   "signals": 12
+  },
+  {
+   "name": "flow>=2028:ai, else flash",
+   "desc": {
+    "rule": "flow",
+    "theta": 2028,
+    "sigM": "ai",
+    "minor": "flash"
+   },
+   "J": 2122.41,
+   "vehH": 1872,
+   "nm": 25041,
+   "per": [
+    168.8,
+    161.1,
+    156.2,
+    335.1,
+    342,
+    307.7,
+    131.2,
+    133.3,
+    136.6
+   ],
+   "signals": 5
+  },
+  {
+   "name": "flow>=1524:actuated, else flash",
+   "desc": {
+    "rule": "flow",
+    "theta": 1524,
+    "sigM": "actuated",
+    "minor": "flash"
+   },
+   "J": 2126.75,
+   "vehH": 1898.2,
+   "nm": 22855,
+   "per": [
+    160.5,
+    178.7,
+    152.4,
+    324.9,
+    361.4,
+    344.8,
+    125.4,
+    125,
+    125.1
+   ],
+   "signals": 8
+  },
+  {
+   "name": "flow>=1013:ai, else off",
+   "desc": {
+    "rule": "flow",
+    "theta": 1013,
+    "sigM": "ai",
+    "minor": "off"
+   },
+   "J": 2143.16,
+   "vehH": 1932.2,
+   "nm": 21096,
+   "per": [
+    195,
+    151.1,
+    155,
+    321.9,
+    343.9,
+    336.1,
+    144.9,
+    126.5,
+    157.8
+   ],
+   "signals": 16
+  },
+  {
+   "name": "flow>=Infinity:ai, else flash",
+   "desc": {
+    "rule": "flow",
+    "theta": null,
+    "sigM": "ai",
+    "minor": "flash"
+   },
+   "J": 2150.79,
+   "vehH": 1856.3999999999999,
+   "nm": 29439,
+   "per": [
+    143.5,
+    145.4,
+    130,
+    336.2,
+    336.7,
+    388,
+    127.8,
+    118.8,
+    130
+   ],
+   "signals": 0
+  },
+  {
+   "name": "flow>=Infinity:actuated, else flash",
+   "desc": {
+    "rule": "flow",
+    "theta": null,
+    "sigM": "actuated",
+    "minor": "flash"
+   },
+   "J": 2150.79,
+   "vehH": 1856.3999999999999,
+   "nm": 29439,
+   "per": [
+    143.5,
+    145.4,
+    130,
+    336.2,
+    336.7,
+    388,
+    127.8,
+    118.8,
+    130
+   ],
+   "signals": 0
+  },
+  {
+   "name": "flow>=2577:ai, else off",
+   "desc": {
+    "rule": "flow",
+    "theta": 2577,
+    "sigM": "ai",
+    "minor": "off"
+   },
+   "J": 2172.1699999999996,
+   "vehH": 1901.7999999999997,
+   "nm": 27037,
+   "per": [
+    181.1,
+    149.2,
+    168,
+    306.4,
+    328.5,
+    316.3,
+    209.8,
+    133.1,
+    109.4
+   ],
+   "signals": 2
+  },
+  {
+   "name": "flow>=1013:actuated, else off",
+   "desc": {
+    "rule": "flow",
+    "theta": 1013,
+    "sigM": "actuated",
+    "minor": "off"
+   },
+   "J": 2179.16,
+   "vehH": 1977.1999999999998,
+   "nm": 20196,
+   "per": [
+    170.1,
+    186.7,
+    182,
+    351.9,
+    323.2,
+    339.5,
+    139.7,
+    144.8,
+    139.3
+   ],
+   "signals": 16
+  },
+  {
+   "name": "flow>=2028:actuated, else flash",
+   "desc": {
+    "rule": "flow",
+    "theta": 2028,
+    "sigM": "actuated",
+    "minor": "flash"
+   },
+   "J": 2196.33,
+   "vehH": 1951.4999999999998,
+   "nm": 24483,
+   "per": [
+    161.2,
+    166.1,
+    155.3,
+    391,
+    346.1,
+    326.9,
+    136.1,
+    127.6,
+    141.2
+   ],
+   "signals": 5
+  },
+  {
+   "name": "flow>=596:ai, else off",
+   "desc": {
+    "rule": "flow",
+    "theta": 596,
+    "sigM": "ai",
+    "minor": "off"
+   },
+   "J": 2204.96,
+   "vehH": 2004.1,
+   "nm": 20086,
+   "per": [
+    172.3,
+    193.8,
+    177.2,
+    373.6,
+    355.6,
+    328.9,
+    140.8,
+    134.6,
+    127.3
+   ],
+   "signals": 24
+  },
+  {
+   "name": "flow>=0:actuated, else off",
+   "desc": {
+    "rule": "flow",
+    "theta": 0,
+    "sigM": "actuated",
+    "minor": "off"
+   },
+   "J": 2243.49,
+   "vehH": 2042,
+   "nm": 20149,
+   "per": [
+    212.3,
+    197.3,
+    179.5,
+    349.3,
+    307.2,
+    336.8,
+    154,
+    158.1,
+    147.5
+   ],
+   "signals": 32
+  },
+  {
+   "name": "flow>=0:actuated, else flash",
+   "desc": {
+    "rule": "flow",
+    "theta": 0,
+    "sigM": "actuated",
+    "minor": "flash"
+   },
+   "J": 2243.49,
+   "vehH": 2042,
+   "nm": 20149,
+   "per": [
+    212.3,
+    197.3,
+    179.5,
+    349.3,
+    307.2,
+    336.8,
+    154,
+    158.1,
+    147.5
+   ],
+   "signals": 32
+  },
+  {
+   "name": "flow>=2577:ai, else flash",
+   "desc": {
+    "rule": "flow",
+    "theta": 2577,
+    "sigM": "ai",
+    "minor": "flash"
+   },
+   "J": 2250.28,
+   "vehH": 1979.5,
+   "nm": 27078,
+   "per": [
+    167.5,
+    144.4,
+    154.9,
+    359,
+    358.2,
+    408.4,
+    133.3,
+    132.8,
+    121
+   ],
+   "signals": 2
+  },
+  {
+   "name": "flow>=596:actuated, else flash",
+   "desc": {
+    "rule": "flow",
+    "theta": 596,
+    "sigM": "actuated",
+    "minor": "flash"
+   },
+   "J": 2289.8999999999996,
+   "vehH": 2086.2,
+   "nm": 20370,
+   "per": [
+    204.6,
+    185.9,
+    179.8,
+    345.7,
+    360.2,
+    359.9,
+    153.3,
+    161.3,
+    135.5
+   ],
+   "signals": 24
+  },
+  {
+   "name": "flow>=0:ai, else off",
+   "desc": {
+    "rule": "flow",
+    "theta": 0,
+    "sigM": "ai",
+    "minor": "off"
+   },
+   "J": 2319.4700000000003,
+   "vehH": 2115.8,
+   "nm": 20367,
+   "per": [
+    228.6,
+    197.9,
+    180.3,
+    422.7,
+    331.4,
+    326.7,
+    148.2,
+    143.1,
+    136.9
+   ],
+   "signals": 32
+  },
+  {
+   "name": "flow>=0:ai, else flash",
+   "desc": {
+    "rule": "flow",
+    "theta": 0,
+    "sigM": "ai",
+    "minor": "flash"
+   },
+   "J": 2319.4700000000003,
+   "vehH": 2115.8,
+   "nm": 20367,
+   "per": [
+    228.6,
+    197.9,
+    180.3,
+    422.7,
+    331.4,
+    326.7,
+    148.2,
+    143.1,
+    136.9
+   ],
+   "signals": 32
+  },
+  {
+   "name": "flow>=596:actuated, else off",
+   "desc": {
+    "rule": "flow",
+    "theta": 596,
+    "sigM": "actuated",
+    "minor": "off"
+   },
+   "J": 2323.5,
+   "vehH": 2124.4,
+   "nm": 19910,
+   "per": [
+    187.4,
+    185.5,
+    208.5,
+    332.4,
+    359.5,
+    339.8,
+    227.4,
+    138.9,
+    145
+   ],
+   "signals": 24
+  },
+  {
+   "name": "flow>=1013:actuated, else flash",
+   "desc": {
+    "rule": "flow",
+    "theta": 1013,
+    "sigM": "actuated",
+    "minor": "flash"
+   },
+   "J": 2326.58,
+   "vehH": 2123.5,
+   "nm": 20308,
+   "per": [
+    185.5,
+    178,
+    167.9,
+    397.4,
+    358.9,
+    400.3,
+    153.2,
+    140.2,
+    142.1
+   ],
+   "signals": 16
+  },
+  {
+   "name": "flow>=596:ai, else flash",
+   "desc": {
+    "rule": "flow",
+    "theta": 596,
+    "sigM": "ai",
+    "minor": "flash"
+   },
+   "J": 2327.75,
+   "vehH": 2133.8,
+   "nm": 19395,
+   "per": [
+    166.8,
+    191.8,
+    157.9,
+    342.7,
+    425.7,
+    416.5,
+    154.4,
+    131.9,
+    146.1
+   ],
+   "signals": 24
+  },
+  {
+   "name": "flow>=2577:actuated, else flash",
+   "desc": {
+    "rule": "flow",
+    "theta": 2577,
+    "sigM": "actuated",
+    "minor": "flash"
+   },
+   "J": 2339.84,
+   "vehH": 2076.5,
+   "nm": 26334,
+   "per": [
+    188.2,
+    175.1,
+    156.7,
+    343.5,
+    408,
+    399.7,
+    129.1,
+    135.7,
+    140.5
+   ],
+   "signals": 2
+  }
+ ],
+ "best": {
+  "name": "major:actuated, else off",
+  "desc": {
+   "rule": "major",
+   "sigM": "actuated",
+   "minor": "off"
+  },
+  "J": 1906.33,
+  "vehH": 1681.3,
+  "nm": 22503,
+  "pairedDiffVsAi": [
+   -64.69999999999999,
+   -50.099999999999994,
+   -25.5,
+   -162.8,
+   -16.299999999999955,
+   -14.899999999999977,
+   -45.19999999999999,
+   -33.69999999999999,
+   -21.30000000000001
+  ]
+ },
+ "modes": {
+  "18": "actuated",
+  "43": "off",
+  "68": "off",
+  "88": "actuated",
+  "106": "actuated",
+  "114": "off",
+  "135": "actuated",
+  "191": "off",
+  "227": "actuated",
+  "292": "off",
+  "308": "off",
+  "324": "actuated",
+  "327": "off",
+  "351": "actuated",
+  "380": "off",
+  "391": "actuated",
+  "402": "off",
+  "431": "actuated",
+  "446": "off",
+  "452": "off",
+  "654": "off",
+  "656": "off",
+  "826": "off",
+  "907": "off",
+  "1067": "off",
+  "1088": "off",
+  "1100": "off",
+  "1166": "off",
+  "1240": "actuated",
+  "1386": "off",
+  "1397": "off",
+  "1573": "off"
+ },
+ "features": {
+  "18": {
+   "flowPerH": 2413,
+   "waitH": 6.36,
+   "major": true
+  },
+  "43": {
+   "flowPerH": 343,
+   "waitH": 0.38,
+   "major": false
+  },
+  "68": {
+   "flowPerH": 596,
+   "waitH": 0.56,
+   "major": false
+  },
+  "88": {
+   "flowPerH": 1212,
+   "waitH": 2.15,
+   "major": true
+  },
+  "106": {
+   "flowPerH": 906,
+   "waitH": 1.75,
+   "major": true
+  },
+  "114": {
+   "flowPerH": 1186,
+   "waitH": 1.22,
+   "major": false
+  },
+  "135": {
+   "flowPerH": 1280,
+   "waitH": 1.89,
+   "major": true
+  },
+  "191": {
+   "flowPerH": 2037,
+   "waitH": 3.58,
+   "major": false
+  },
+  "227": {
+   "flowPerH": 1340,
+   "waitH": 2.31,
+   "major": true
+  },
+  "292": {
+   "flowPerH": 256,
+   "waitH": 0.44,
+   "major": false
+  },
+  "308": {
+   "flowPerH": 2028,
+   "waitH": 5.12,
+   "major": false
+  },
+  "324": {
+   "flowPerH": 821,
+   "waitH": 1.61,
+   "major": true
+  },
+  "327": {
+   "flowPerH": 640,
+   "waitH": 0.66,
+   "major": false
+  },
+  "351": {
+   "flowPerH": 1976,
+   "waitH": 10.62,
+   "major": true
+  },
+  "380": {
+   "flowPerH": 652,
+   "waitH": 0.36,
+   "major": false
+  },
+  "391": {
+   "flowPerH": 2803,
+   "waitH": 3.41,
+   "major": true
+  },
+  "402": {
+   "flowPerH": 319,
+   "waitH": 0.24,
+   "major": false
+  },
+  "431": {
+   "flowPerH": 1013,
+   "waitH": 1.23,
+   "major": true
+  },
+  "446": {
+   "flowPerH": 2577,
+   "waitH": 16.71,
+   "major": false
+  },
+  "452": {
+   "flowPerH": 502,
+   "waitH": 0.47,
+   "major": false
+  },
+  "654": {
+   "flowPerH": 1132,
+   "waitH": 1.23,
+   "major": false
+  },
+  "656": {
+   "flowPerH": 642,
+   "waitH": 0.85,
+   "major": false
+  },
+  "826": {
+   "flowPerH": 258,
+   "waitH": 0.19,
+   "major": false
+  },
+  "907": {
+   "flowPerH": 890,
+   "waitH": 1.01,
+   "major": false
+  },
+  "1067": {
+   "flowPerH": 797,
+   "waitH": 1.15,
+   "major": false
+  },
+  "1088": {
+   "flowPerH": 1542,
+   "waitH": 2.3,
+   "major": false
+  },
+  "1100": {
+   "flowPerH": 433,
+   "waitH": 0.29,
+   "major": false
+  },
+  "1166": {
+   "flowPerH": 1028,
+   "waitH": 0.67,
+   "major": false
+  },
+  "1240": {
+   "flowPerH": 1524,
+   "waitH": 9.16,
+   "major": true
+  },
+  "1386": {
+   "flowPerH": 517,
+   "waitH": 0.39,
+   "major": false
+  },
+  "1397": {
+   "flowPerH": 378,
+   "waitH": 0.56,
+   "major": false
+  },
+  "1573": {
+   "flowPerH": 1366,
+   "waitH": 0.78,
+   "major": false
+  }
+ },
+ "log": [
+  {
+   "step": "start",
+   "from": "policy search"
+  }
+ ]
+}

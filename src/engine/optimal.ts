@@ -1,3 +1,3 @@
 import type { NodeMode } from './types';
-/** per-junction modes found by scripts/optimize.ts (placeholder until the optimiser has run) */
-export const OPTIMAL_MODES: Record<number, NodeMode> = {};
+/** per-junction modes found by scripts/optimize.ts: policy "major:actuated, else off" (training seeds 11,12,13, scenarios morning, evening, incident; objective vehicle-hours lost + 0.01 x near-misses). Generated, do not edit by hand. */
+export const OPTIMAL_MODES: Record<number, NodeMode> = {"18":"actuated","43":"off","68":"off","88":"actuated","106":"actuated","114":"off","135":"actuated","191":"off","227":"actuated","292":"off","308":"off","324":"actuated","327":"off","351":"actuated","380":"off","391":"actuated","402":"off","431":"actuated","446":"off","452":"off","654":"off","656":"off","826":"off","907":"off","1067":"off","1088":"off","1100":"off","1166":"off","1240":"actuated","1386":"off","1397":"off","1573":"off"};

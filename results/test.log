@@ -1,0 +1,9 @@
+
+ RUN  v5.1.0 /workspace/hanoi-flow-lab
+
+
+ Test Files  1 passed (1)
+      Tests  33 passed (33)
+   Start at  11:56:53
+   Duration  109.65s (tests 100%)
+

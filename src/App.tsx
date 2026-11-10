@@ -95,6 +95,7 @@ export default function App() {
       <div className="layers">
         {([['heat', 'Nhiệt tốc độ'], ['density', 'Mật độ'], ['signals', 'Đèn tín hiệu'], ['ai', 'Quyết định AI'], ['night', 'Ban đêm'], ['light', 'Chế độ nhẹ']] as [keyof Layers, string][]).map(([k, l]) =>
           <label key={k} className="chk"><input type="checkbox" checked={!!layers[k]} onChange={e => { const n = { ...layers, [k]: e.target.checked }; if (k === 'heat' && e.target.checked) n.density = false; if (k === 'density' && e.target.checked) n.heat = false; setLayers(n); }} />{l}</label>)}
+        {layers.signals && <span className="legend small" title="Vòng màu quanh các nút vốn có đèn"><i style={{ color: '#4fe3ff' }}>◯ AI</i> <i style={{ color: '#ffd23f' }}>◯ cảm biến</i> <i style={{ color: '#ff7b5c' }}>◯ cố định</i> <i style={{ color: '#ffa24f' }}>◯ vàng nhấp nháy</i> <i style={{ color: '#8a8a8a' }}>◯ tắt đèn</i> <i style={{ color: '#fff' }}>◯ nhường mọi hướng</i></span>}
         <span className="engine" title="Engine đang chạy">⚙ {backend ? 'SUMO (backend): ' + backend : info.engine}</span>
         <span className="perf">{info.n} xe · {info.sps.toFixed(0)} bước/s · {info.fps.toFixed(0)} FPS</span>
       </div>

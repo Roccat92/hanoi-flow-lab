@@ -1,0 +1,44 @@
+baseline fixed     2468.3 vehH 2259.2 nm 20911
+baseline actuated  2243.5 vehH 2042.0 nm 20149
+baseline ai        2319.5 vehH 2115.8 nm 20367
+baseline nosignal  1914.8 vehH 1633.4 nm 28139
+baseline major     1933.6 vehH 1699.8 nm 23384
+baseline flash     2150.8 vehH 1856.4 nm 29439
+baseline allway    2747.8 vehH 2491.8 nm 25598
+major:actuated, else off             1906.3 vehH 1681.3 nm 22503 signals 10
+flow>=Infinity:ai, else off          1914.8 vehH 1633.4 nm 28139 signals 0
+flow>=Infinity:actuated, else off    1914.8 vehH 1633.4 nm 28139 signals 0
+major:ai, else off                   1933.6 vehH 1699.8 nm 23384 signals 10
+major:actuated, else flash           1948.8 vehH 1720.3 nm 22847 signals 10
+flow>=1212:ai, else flash            1989.6 vehH 1774.6 nm 21498 signals 12
+major:ai, else flash                 2005.5 vehH 1777.8 nm 22767 signals 10
+flow>=1524:ai, else flash            2034.0 vehH 1802.7 nm 23126 signals 8
+flow>=2577:actuated, else off        2034.0 vehH 1773.7 nm 26027 signals 2
+flow>=2028:ai, else off              2044.8 vehH 1810.1 nm 23465 signals 5
+flow>=1212:ai, else off              2058.8 vehH 1847.0 nm 21176 signals 12
+flow>=2028:actuated, else off        2061.6 vehH 1831.0 nm 23057 signals 5
+flow>=1524:ai, else off              2066.7 vehH 1844.3 nm 22236 signals 8
+flow>=1212:actuated, else off        2087.0 vehH 1878.6 nm 20840 signals 12
+flow>=1524:actuated, else off        2094.5 vehH 1867.6 nm 22687 signals 8
+flow>=1013:ai, else flash            2107.5 vehH 1895.1 nm 21236 signals 16
+flow>=1212:actuated, else flash      2110.5 vehH 1897.4 nm 21309 signals 12
+flow>=2028:ai, else flash            2122.4 vehH 1872.0 nm 25041 signals 5
+flow>=1524:actuated, else flash      2126.8 vehH 1898.2 nm 22855 signals 8
+flow>=1013:ai, else off              2143.2 vehH 1932.2 nm 21096 signals 16
+flow>=Infinity:ai, else flash        2150.8 vehH 1856.4 nm 29439 signals 0
+flow>=Infinity:actuated, else flash  2150.8 vehH 1856.4 nm 29439 signals 0
+flow>=2577:ai, else off              2172.2 vehH 1901.8 nm 27037 signals 2
+flow>=1013:actuated, else off        2179.2 vehH 1977.2 nm 20196 signals 16
+flow>=2028:actuated, else flash      2196.3 vehH 1951.5 nm 24483 signals 5
+flow>=596:ai, else off               2205.0 vehH 2004.1 nm 20086 signals 24
+flow>=0:actuated, else off           2243.5 vehH 2042.0 nm 20149 signals 32
+flow>=0:actuated, else flash         2243.5 vehH 2042.0 nm 20149 signals 32
+flow>=2577:ai, else flash            2250.3 vehH 1979.5 nm 27078 signals 2
+flow>=596:actuated, else flash       2289.9 vehH 2086.2 nm 20370 signals 24
+flow>=0:ai, else off                 2319.5 vehH 2115.8 nm 20367 signals 32
+flow>=0:ai, else flash               2319.5 vehH 2115.8 nm 20367 signals 32
+flow>=596:actuated, else off         2323.5 vehH 2124.4 nm 19910 signals 24
+flow>=1013:actuated, else flash      2326.6 vehH 2123.5 nm 20308 signals 16
+flow>=596:ai, else flash             2327.8 vehH 2133.8 nm 19395 signals 24
+flow>=2577:actuated, else flash      2339.8 vehH 2076.5 nm 26334 signals 2
+best major:actuated, else off paired diff vs ai per run -65 -50 -26 -163 -16 -15 -45 -34 -21 10.5 min

@@ -10,7 +10,7 @@ export interface Snapshot {
   peds?: Float32Array; np?: number;
   crashes?: { id: number; x: number; y: number; h: number; crowd: number; side: number; t0: number; t1: number }[];
   events?: SimEvent[];
-  /** unsignalised control at physically signalised junctions: [node id, 1 dark | 2 flashing amber | 3 all-way yield] */
+  /** unsignalised control at physically signalised junctions: [node id, 1 dark | 2 flashing amber | 3 all-way yield | 4 fixed | 5 actuated | 6 AI signal] */
   umodes?: [number, number][];
 }
 export interface NodeInfo {

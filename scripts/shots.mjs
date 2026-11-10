@@ -13,6 +13,9 @@ const shots = [
   ['crash', '?scenario=normal&controller=ai&speed=4&crashRate=30', 30000, 'crash'],
   ['editor', '?scenario=morning&controller=fixed&speed=4&editor=1', 15000, 'editor'],
   ['alleys', '?scenario=morning&controller=ai&speed=4', 25000, 'alley'],
+  ['nosignal-gridlock', '?scenario=extreme&controller=nosignal&speed=16', 50000, 'jam'],
+  ['optimal-map', '?scenario=morning&controller=optimal&speed=4', 15000, 'modes'],
+  ['results', '?scenario=morning&results=1', 4000, 'results'],
 ];
 const only = process.argv[3];
 const browser = await puppeteer.launch({ executablePath: '/usr/bin/google-chrome', headless: 'new', args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--window-size=1600,900'] });
@@ -53,6 +56,25 @@ for (const [name, q, wait, action] of shots) {
     }, action);
     await new Promise(r => setTimeout(r, 5000));
   }
+  if (action === 'jam') {
+    // the physically signalised junction with the most stopped vehicles around it
+    await page.evaluate(() => {
+      const v = window.__views[window.__views.length - 1]; const s = v.lastSnap; let best = null, bs = -1;
+      for (const n of v.net.nodes) { if (!n.signal) continue; let c = 0; for (let i = 0; i < s.n; i++) { if (!(s.veh[i * 7 + 6] & 1)) continue; if (Math.hypot(s.veh[i * 7] - n.x, s.veh[i * 7 + 1] - n.y) < 45) c++; } if (c > bs) { bs = c; best = n; } }
+      if (best) v.focus(best.x, best.y, 3.2);
+    });
+    await new Promise(r => setTimeout(r, 4000));
+  }
+  if (action === 'modes') {
+    await page.evaluate(() => { const v = window.__views[window.__views.length - 1]; const n = v.net.nodes.filter(n => n.signal); const x = n.reduce((a, b) => a + b.x, 0) / n.length, y = n.reduce((a, b) => a + b.y, 0) / n.length; v.focus(x, y, 1.6); });
+    await new Promise(r => setTimeout(r, 3000));
+  }
+  if (action === 'results') {
+    await page.waitForSelector('.modal .cmp', { timeout: 30000 });
+    const h = await page.evaluate(() => document.querySelector('.modal-body').scrollHeight + 80);
+    await page.setViewport({ width: 1600, height: Math.max(900, h) });
+    await new Promise(r => setTimeout(r, 500));
+  }
   if (action === 'crash') {
     await page.waitForFunction(() => (window.__views[window.__views.length - 1].lastSnap?.crashes ?? []).length > 0, { timeout: 120000 });
     await page.evaluate(() => { const v = window.__views[window.__views.length - 1]; const c = v.lastSnap.crashes[0]; v.focus(c.x, c.y, 6); });
@@ -60,7 +82,7 @@ for (const [name, q, wait, action] of shots) {
   }
   if (action === 'compare') {
     await page.evaluate(() => { const s = [...document.querySelectorAll('.modal select')][1]; if (s) { s.value = '20'; s.dispatchEvent(new Event('change', { bubbles: true })); } });
-    await page.evaluate(() => [...document.querySelectorAll('.modal button')].find(b => b.textContent.includes('Chạy 3'))?.click());
+    await page.evaluate(() => [...document.querySelectorAll('.modal button')].find(b => b.textContent.startsWith('Chạy '))?.click());
     await page.waitForSelector('.cmp', { timeout: 600000 });
     await new Promise(r => setTimeout(r, 800));
     const h = await page.evaluate(() => document.querySelector('.modal-body').scrollHeight + 80);
