@@ -22,7 +22,7 @@ export const SimPanel = forwardRef<SimPanelHandle, Props>(function SimPanel(p, r
     v.mount(el.current!).then(() => {
       if (!alive) { v.destroy(); return; }
       const c = p.backend ? sumoClient(p.backend, p.cfg) : workerClient(p.data, p.cfg); client.current = c;
-      c.on(m => { if (m.type === 'snap') { v.update(m.snap); cb.current.onSnap?.(m.snap); } cb.current.onMsg?.(m); });
+      c.on(m => { if (m.type === 'ready' && m.lines) v.setBus(m.lines, m.stops ?? []); if (m.type === 'snap') { v.update(m.snap); cb.current.onSnap?.(m.snap); } cb.current.onMsg?.(m); });
       c.send({ type: 'play', on: cb.current.playing }); c.send({ type: 'speed', x: cb.current.speed }); c.send({ type: 'light', on: cb.current.layers.light });
     });
     return () => { alive = false; client.current?.close(); client.current = null; if (v.ready) v.destroy(); view.current = null; };

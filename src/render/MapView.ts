@@ -3,15 +3,16 @@ import type { MapData, DecisionLog, Edits } from '../engine/types';
 import { Network } from '../engine/network';
 import { buildMapCanvas, buildTile, TILE, TILE_PX } from './mapTexture';
 import { makeTextures, type VehTextures } from './sprites';
-import { VSTRIDE, PSTRIDE, type Snapshot } from '../sim/protocol';
+import { VSTRIDE, PSTRIDE, type Snapshot, type BusLineGeo, type BusStopGeo } from '../sim/protocol';
 
-export interface Layers { heat: boolean; density: boolean; signals: boolean; ai: boolean; night: boolean; light: boolean; editor?: boolean; zones?: { node: number; w: number }[] }
+export interface Layers { busRoutes?: boolean; heat: boolean; density: boolean; signals: boolean; ai: boolean; night: boolean; light: boolean; editor?: boolean; zones?: { node: number; w: number }[] }
 export type PickKind = 'veh' | 'node' | 'link';
 const VDIM = [[0.8, 1.9], [1.8, 4.5], [2.5, 11], [2.3, 7.5], [0.6, 1.75], [1.75, 4.4], [1.95, 5.2], [1.9, 4.8]];
 
 export class MapView {
   app = new Application(); world = new Container(); mapSprite = new Sprite(); overlay = new Graphics(); sigG = new Graphics();
   vehLayer = new Container(); glowLayer = new Container(); labelLayer = new Container(); selG = new Graphics();
+  routesG = new Graphics(); stopG = new Graphics(); paxLayer = new Container(); paxSprites: Sprite[] = []; busLines: BusLineGeo[] = []; busStopsGeo: BusStopGeo[] = [];
   tileLayer = new Container(); pedLayer = new Container(); fxG = new Graphics(); editG = new Graphics(); crashLayer = new Container();
   peds: Sprite[] = []; tiles = new Map<string, Sprite>(); crashSprites: Sprite[] = []; crashTexts: Text[] = []; pickMode: 'auto' | 'node' | 'link' = 'auto'; edits: Edits = {};
   tex!: VehTextures; sprites: Sprite[] = []; glows: Sprite[] = []; labels: Text[] = [];
@@ -34,13 +35,13 @@ export class MapView {
     el.appendChild(this.app.canvas);
     this.app.canvas.style.imageRendering = 'pixelated';
     this.tex = makeTextures();
-    this.world.addChild(this.mapSprite, this.tileLayer, this.overlay, this.editG, this.sigG, this.pedLayer, this.glowLayer, this.vehLayer, this.fxG, this.crashLayer, this.selG, this.labelLayer);
+    this.world.addChild(this.mapSprite, this.tileLayer, this.overlay, this.routesG, this.editG, this.sigG, this.stopG, this.paxLayer, this.pedLayer, this.glowLayer, this.vehLayer, this.fxG, this.crashLayer, this.selG, this.labelLayer);
     this.app.stage.addChild(this.world);
     this.setMap();
     this.fit();
     this.bindInput();
     this.app.ticker.add(() => this.frame());
-    this.ready = true;
+    this.ready = true; this.drawRoutes();
     (window as any).__views = [...((window as any).__views ?? []).filter((x: MapView) => x.ready), this];
     // used by the screenshot script: screen position of the busiest signalised junction
     (window as any).__pickSignal = () => {
@@ -66,8 +67,20 @@ export class MapView {
     this.pickMode = l.editor ? this.pickMode : 'auto';
     this.layers = { ...l };
     if (nightChanged && this.ready) this.setMap();
-    if (this.ready) { this.drawOverlay(); this.drawEditor(); }
+    if (this.ready) { this.drawOverlay(); this.drawEditor(); this.drawRoutes(); }
   }
+  setBus(lines: BusLineGeo[], stops: BusStopGeo[]) { this.busLines = lines; this.busStopsGeo = stops; if (this.ready) this.drawRoutes(); }
+  /** bus route layer: each OSM line in its colour (inferred headways dashed-looking thinner), stops as blue posts */
+  drawRoutes() {
+    const g = this.routesG; g.clear(); if (!this.layers.busRoutes) return;
+    this.busLines.forEach((l, i) => {
+      const col = parseInt((l.colour || '#1e88e5').replace('#', '').padEnd(6, '0').slice(0, 6), 16) || 0x1e88e5; const pts = l.pts; if (pts.length < 4) return;
+      const off = (i % 5 - 2) * 0.5; // small offsets so overlapping lines stay visible
+      g.moveTo(pts[0] + off, pts[1] + off); for (let k = 2; k < pts.length; k += 2) g.lineTo(pts[k] + off, pts[k + 1] + off);
+      g.stroke({ width: l.inferred ? 1.1 : 1.6, color: col, alpha: 0.75, cap: 'round', join: 'round' });
+    });
+  }
+
   fit() {
     const b = this.net.bounds; const w = this.app.screen.width, h = this.app.screen.height;
     const z = Math.min(w / (b.maxX - b.minX + 80), h / (b.maxY - b.minY + 80));
@@ -122,6 +135,7 @@ export class MapView {
     this.drawSignals(s);
     this.drawVehicles(s);
     this.drawPeds(s);
+    this.drawStops(s);
     this.drawCrashes(s);
     this.drawLabels(s.t);
   }
@@ -210,7 +224,8 @@ export class MapView {
       } else {
         const set = this.tex.byType[type] ?? this.tex.car;
         sp.texture = set[id % set.length]; sp.tint = 0xffffff;
-        sp.width = VDIM[type][0]; sp.height = VDIM[type][1]; sp.rotation = v[o + 2] + Math.PI / 2;
+        sp.width = v[o + 8] || VDIM[type][0]; sp.height = v[o + 7] || VDIM[type][1]; sp.rotation = v[o + 2] + Math.PI / 2;
+        if (type === 3) { const k = (v[o + 6] | 0) >> 8; sp.tint = k === 1 ? 0xc8d0ff : k === 2 ? 0xffc65a : k === 3 ? 0x8fe08f : 0xffffff; }
       }
       sp.position.set(v[o], v[o + 1]);
       if (night) { const gl = this.glows[i]; gl.position.set(v[o] + Math.cos(v[o + 2]) * VDIM[type][1] / 2, v[o + 1] + Math.sin(v[o + 2]) * VDIM[type][1] / 2); gl.rotation = v[o + 2] + Math.PI / 2; const two = type === 0 || type === 4; gl.width = two ? 2.5 : 4; gl.height = two ? 5 : 9; gl.visible = type !== 4 || false; }
@@ -218,8 +233,17 @@ export class MapView {
     // honking (aggressive two-wheelers / taxis), red-light runners, fender-bender vehicles
     const fx = this.fxG; fx.clear();
     if (z >= 2.2) for (let i = 0; i < s.n; i++) {
-      const o = i * VSTRIDE; const f = v[o + 6] | 0; if (!(f & 14)) continue;
-      const x = v[o], y = v[o + 1], h = v[o + 2], L = VDIM[v[o + 3] | 0][1] / 2 + 0.4;
+      const o = i * VSTRIDE; const f = v[o + 6] | 0; if (!(f & 126)) continue;
+      const x = v[o], y = v[o + 1], h = v[o + 2], L = (v[o + 7] || VDIM[v[o + 3] | 0][1]) / 2 + 0.4;
+      const blink = Math.floor(s.t * 2) % 2 === 0; const W = (v[o + 8] || 2) / 2 + 0.25;
+      const rx = Math.cos(h + Math.PI / 2), ry = Math.sin(h + Math.PI / 2); // right-hand side
+      if (f & 64 && blink) { fx.circle(x + Math.cos(h) * (L - 0.6) + rx * W, y + Math.sin(h) * (L - 0.6) + ry * W, 0.35).fill({ color: 0xffa000 }); } // indicator: pulling over
+      if (f & 16) { fx.circle(x + Math.cos(h) * (L - 1.5) + rx * W, y + Math.sin(h) * (L - 1.5) + ry * W, 0.45).fill({ color: 0x7dff8a }); } // doors open
+      if (f & 32) { // unloading: hazard lights + boxes on the pavement side
+        if (blink) for (const sgn of [-1, 1]) for (const e of [-1, 1]) fx.circle(x + Math.cos(h) * L * e + rx * W * sgn * 0.8, y + Math.sin(h) * L * e + ry * W * sgn * 0.8, 0.35).fill({ color: 0xffb000 });
+        for (let b = 0; b < 3; b++) { const bx = x - Math.cos(h) * (L - 1.2 - b * 0.9) + rx * (W + 0.9), by = y - Math.sin(h) * (L - 1.2 - b * 0.9) + ry * (W + 0.9); fx.rect(bx - 0.35, by - 0.35, 0.7, 0.7).fill({ color: 0xb07a3c }).stroke({ width: 0.08, color: 0x5a3a10 }); }
+      }
+      if (!(f & 14)) continue;
       const fxp = x + Math.cos(h) * L, fyp = y + Math.sin(h) * L;
       if (f & 2) { for (const r of [0.6, 1.1]) { fx.arc(fxp, fyp, r, h - 0.7, h + 0.7); fx.stroke({ width: 0.15, color: 0xffe14d, alpha: 0.95 }); } }
       if (f & 4) fx.circle(x, y, 1.4).stroke({ width: 0.2, color: 0xff3b30 });
@@ -274,6 +298,32 @@ export class MapView {
       // walking legs: tiny bob
       sp.rotation = s.peds[o + 3] ? Math.sin(s.t * 6 + i) * 0.25 : 0;
     }
+  }
+
+  /** line stops: a post, waiting passengers (one figure each, up to 14), boarding passengers walking to the kerb while a bus dwells */
+  private drawStops(s: Snapshot) {
+    const g = this.stopG; g.clear(); const z = this.world.scale.x; const show = z >= 1.0 && !!s.stopWait;
+    let used = 0;
+    if (show) for (let i = 0; i < this.busStopsGeo.length; i++) {
+      const st = this.busStopsGeo[i]; const n = s.stopWait![i * 2] | 0; const boarding = s.stopWait![i * 2 + 1] > 0;
+      g.rect(st.x - 0.5, st.y - 0.5, 1.0, 1.0).fill({ color: 0x1565c0 }).stroke({ width: 0.15, color: 0xffffff });
+      const dx = st.rx - st.x, dy = st.ry - st.y, d = Math.hypot(dx, dy) || 1; const ux = dx / d, uy = dy / d; // towards the road
+      const m = Math.min(14, n);
+      for (let k = 0; k < m; k++) {
+        if (used >= this.paxSprites.length) { const sp = new Sprite(this.tex.ped[0]); sp.anchor.set(0.5); this.paxLayer.addChild(sp); this.paxSprites.push(sp); }
+        const sp = this.paxSprites[used++]; sp.visible = true; sp.texture = this.tex.ped[(i * 7 + k) % this.tex.ped.length]; sp.width = 0.75; sp.height = 1.0;
+        const along = ((k % 7) - 3) * 0.75, row = Math.floor(k / 7) * 0.8;
+        sp.position.set(st.x - uy * along - ux * row, st.y + ux * along - uy * row); sp.rotation = 0;
+      }
+      if (boarding) for (let k = 0; k < 3; k++) { // boarding animation: figures stepping from the stop to the bus door
+        if (used >= this.paxSprites.length) { const sp = new Sprite(this.tex.ped[0]); sp.anchor.set(0.5); this.paxLayer.addChild(sp); this.paxSprites.push(sp); }
+        const sp = this.paxSprites[used++]; sp.visible = true; sp.texture = this.tex.ped[(i + k) % this.tex.ped.length]; sp.width = 0.75; sp.height = 1.0;
+        const u = ((s.t * 0.9 + k / 3) % 1); const ex = st.rx + ux * 0.6, ey = st.ry + uy * 0.6;
+        sp.position.set(st.x + (ex - st.x) * u + (k - 1) * 0.5 * -uy, st.y + (ey - st.y) * u + (k - 1) * 0.5 * ux); sp.rotation = Math.sin(s.t * 8 + k) * 0.25;
+      }
+      if (z >= 2.2 && n > 14) g.circle(st.x - ux * 2.2, st.y - uy * 2.2, 0.6).fill({ color: 0xffd23f });
+    }
+    for (let k = used; k < this.paxSprites.length; k++) this.paxSprites[k].visible = false;
   }
 
   /** modelled fender-benders: two drivers arguing next to their vehicles, onlookers, a warning bubble */

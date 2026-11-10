@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { DEFAULT_CRASH, type ControllerKind, type MapData, type Metrics, type ScenarioKind, type SimConfig, type DecisionLog, type Edits, type SimEvent } from './engine/types';
+import { DEFAULT_BUS, DEFAULT_TRUCK, DEFAULT_CRASH, type ControllerKind, type MapData, type Metrics, type ScenarioKind, type SimConfig, type DecisionLog, type Edits, type SimEvent } from './engine/types';
 import { SCENARIOS } from './engine/scenarios';
 import { SimPanel, type SimPanelHandle } from './ui/SimPanel';
 import { Inspector, fmtT } from './ui/Inspector';
@@ -22,7 +22,7 @@ export default function App() {
   const [data, setData] = useState<MapData | null>(null);
   const [err, setErr] = useState('');
   const [cfg, setCfg] = useState<SimConfig>({ seed: +(Q.get('seed') ?? 42), controller: (Q.get('controller') as ControllerKind) ?? 'ai', scenario: (Q.get('scenario') as ScenarioKind) ?? 'morning', demandScale: +(Q.get('demand') ?? 1), dt: 0.5, ...(Q.get('cap') ? { maxVehicles: +Q.get('cap')! } : {}), edits: initialEdits(), chaos: +(Q.get('chaos') ?? 0.6), crashes: { ...DEFAULT_CRASH, on: Q.get('crash') !== '0', ...(Q.get('crashRate') ? { perHour: +Q.get('crashRate')! } : {}) } });
-  const [layers, setLayers] = useState<Layers>({ heat: Q.get('layer') === 'heat', density: Q.get('layer') === 'density', signals: true, ai: true, night: Q.get('night') === '1', light: Q.get('quality') === 'low' });
+  const [layers, setLayers] = useState<Layers>({ heat: Q.get('layer') === 'heat', density: Q.get('layer') === 'density', busRoutes: Q.get('bus') === '1', signals: true, ai: true, night: Q.get('night') === '1', light: Q.get('quality') === 'low' });
   const [playing, setPlaying] = useState(true); const [speed, setSpeed] = useState(+(Q.get('speed') ?? 4));
   const [split, setSplit] = useState(Q.get('view') === 'split'); const [splitB, setSplitB] = useState<ControllerKind>('fixed');
   const [showCmp, setShowCmp] = useState(Q.get('compare') === '1'); const [showRes, setShowRes] = useState(Q.get('results') === '1');
@@ -42,7 +42,8 @@ export default function App() {
   const cfgB = useMemo(() => ({ ...cfg, controller: splitB }), [cfgKey, splitB]);
 
   useEffect(() => {
-    fetch(import.meta.env.BASE_URL + 'data/dongda.json').then(r => r.json()).then(setData).catch(e => setErr(String(e)));
+    Promise.all([fetch(import.meta.env.BASE_URL + 'data/dongda.json').then(r => r.json()), fetch(import.meta.env.BASE_URL + 'data/bus_lines.json').then(r => r.ok ? r.json() : null).catch(() => null)])
+      .then(([d, b]) => { if (b?.lines) d.busLines = b.lines; setData(d); }).catch(e => setErr(String(e)));
   }, []);
   useEffect(() => { setHist([]); setHistB([]); setDecs([]); setEvents([]); }, [cfgKey, splitB, split]);
   useEffect(() => { localStorage.setItem('hanoi-flow-lab:current', JSON.stringify(cfg.edits ?? {})); }, [JSON.stringify(cfg.edits)]);
@@ -89,11 +90,14 @@ export default function App() {
         <button className={split ? 'on' : ''} onClick={() => setSplit(!split)}>⇆ Chia đôi</button>
         <button className={showEd ? 'on' : ''} onClick={() => setShowEd(!showEd)}>🛠 Chỉnh sửa</button>
         <label title="0 = trật tự, 100% = hỗn loạn kiểu Hà Nội giờ cao điểm">Hỗn loạn <input type="range" min={0} max={1} step={0.05} value={cfg.chaos ?? 0.6} onChange={e => setCfg({ ...cfg, chaos: +e.target.value })} />{Math.round((cfg.chaos ?? 0.6) * 100)}%</label>
+        <label title="Xác suất mỗi đoạn đường có khách vẫy xe buýt ngoài điểm dừng">Khách vẫy <input type="range" min={0} max={0.2} step={0.01} value={cfg.bus?.hailP ?? DEFAULT_BUS.hailP} onChange={e => setCfg({ ...cfg, bus: { ...DEFAULT_BUS, ...cfg.bus, hailP: +e.target.value } })} />{Math.round((cfg.bus?.hailP ?? DEFAULT_BUS.hailP) * 100)}%</label>
+        <label className="chk" title="AI ưu tiên đèn cho xe buýt theo số khách trên xe, kéo dài xanh tối đa 15 s khi buýt sắp tới vạch"><input type="checkbox" checked={!!cfg.bus?.tsp} onChange={e => setCfg({ ...cfg, bus: { ...DEFAULT_BUS, ...cfg.bus, tsp: e.target.checked } })} />Ưu tiên buýt (TSP)</label>
+        <label className="chk" title="GIẢ ĐỊNH: giờ cao điểm sáng/chiều xe tải nặng và xe ben không vào nội đô (đơn giản hoá quy định của Hà Nội)"><input type="checkbox" checked={cfg.trucks?.peakBan ?? true} onChange={e => setCfg({ ...cfg, trucks: { ...DEFAULT_TRUCK, ...cfg.trucks, peakBan: e.target.checked } })} />Cấm tải giờ cao điểm</label>
         <button className="primary" onClick={() => setShowCmp(true)}>⚗ So sánh</button>
         <button onClick={() => setShowRes(true)}>📑 Kết quả</button>
       </header>
       <div className="layers">
-        {([['heat', 'Nhiệt tốc độ'], ['density', 'Mật độ'], ['signals', 'Đèn tín hiệu'], ['ai', 'Quyết định AI'], ['night', 'Ban đêm'], ['light', 'Chế độ nhẹ']] as [keyof Layers, string][]).map(([k, l]) =>
+        {([['heat', 'Nhiệt tốc độ'], ['density', 'Mật độ'], ['busRoutes', 'Tuyến buýt'], ['signals', 'Đèn tín hiệu'], ['ai', 'Quyết định AI'], ['night', 'Ban đêm'], ['light', 'Chế độ nhẹ']] as [keyof Layers, string][]).map(([k, l]) =>
           <label key={k} className="chk"><input type="checkbox" checked={!!layers[k]} onChange={e => { const n = { ...layers, [k]: e.target.checked }; if (k === 'heat' && e.target.checked) n.density = false; if (k === 'density' && e.target.checked) n.heat = false; setLayers(n); }} />{l}</label>)}
         {layers.signals && <span className="modelegend" title="Vòng màu quanh các nút vốn có đèn"><b style={{ color: '#4fe3ff' }}>◯ AI</b> <b style={{ color: '#ffd23f' }}>◯ cảm biến</b> <b style={{ color: '#ff7b5c' }}>◯ cố định</b> <b style={{ color: '#ffa24f' }}>◯ vàng nhấp nháy</b> <b style={{ color: '#9a9ab0' }}>◯ tắt đèn (vòng tối)</b> <b style={{ color: '#fff' }}>◯ nhường mọi hướng</b></span>}
         <span className="engine" title="Engine đang chạy">⚙ {backend ? 'SUMO (backend): ' + backend : info.engine}</span>
@@ -119,6 +123,11 @@ export default function App() {
               <K l="CO₂ ước tính" v={m ? fmtN(m.co2kgH) + ' kg/h' : '-'} />
               <K l="Suýt va chạm" v={m ? (m.nearMiss ?? 0) : '-'} />
               <K l="Kẹt cứng nút" v={m ? (m.gridlockEvents ?? 0) : '-'} warn={!!m && (m.gridlockEvents ?? 0) > 20} />
+              <K l="Tốc độ xe buýt" v={m?.busRuns ? (m.busSpeedKmh ?? 0).toFixed(1) + ' km/h' : '-'} />
+              <K l="Khách chờ buýt TB" v={m?.busBoarded ? ((m.busPaxWaitS ?? 0) / 60).toFixed(1) + ' phút' : '-'} />
+              <K l="Dồn chuyến buýt" v={m?.busRuns ? ((m.busBunching ?? 0) * 100).toFixed(0) + ' %' : '-'} warn={!!m && (m.busBunching ?? 0) > 0.15} />
+              <K l="Buýt dừng giữa làn" v={m ? (m.busInLane ?? 0) : '-'} />
+              <K l="Xe tải đỗ bốc dỡ" v={m ? (m.truckUnloads ?? 0) : '-'} />
             </div>
             {split && snapB && <div className="muted small">Bên phải ({CTRL[splitB]}): {snapB.active} xe · {snapB.avgSpeedKmh.toFixed(1)} km/h · trễ {snapB.avgDelayS.toFixed(0)} s · ra {snapB.completed} · chờ vào {snapB.waitingEntry}</div>}
           </div>
@@ -157,7 +166,7 @@ export default function App() {
       </main>
       <footer>Bản đồ: {data.meta.attribution} · Khu vực: {data.meta.area} · {data.meta.counts.nodes} nút, {data.meta.counts.links} đoạn đường, {data.meta.counts.signals} nút đèn · Mô phỏng phục vụ nghiên cứu, không phải số liệu đo thực tế.</footer>
       {showRes && <Results onClose={() => setShowRes(false)} onUse={k => { setCfg({ ...cfg, controller: k }); setShowRes(false); }} />}
-      {showCmp && <Compare data={data} onClose={() => setShowCmp(false)} initial={{ seed: cfg.seed, scenario: cfg.scenario, demandScale: cfg.demandScale, edits: cfg.edits, chaos: cfg.chaos, crashes: cfg.crashes }} />}
+      {showCmp && <Compare data={data} onClose={() => setShowCmp(false)} initial={{ seed: cfg.seed, scenario: cfg.scenario, demandScale: cfg.demandScale, edits: cfg.edits, chaos: cfg.chaos, crashes: cfg.crashes, bus: cfg.bus, trucks: cfg.trucks }} />}
     </div>
   );
 }

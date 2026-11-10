@@ -28,10 +28,13 @@ const ROWS: Row[] = [
   { key: 'nearMiss', label: 'An toàn: suýt va chạm (xe xung đột < 1.5 s)', unit: 'lần', better: 'low', get: r => r.summary.nearMiss ?? 0, d: 0 },
   { key: 'hardBrakes', label: 'An toàn: phanh gấp (> 4.5 m/s²)', unit: 'lần', better: 'low', get: r => r.summary.hardBrakes ?? 0, d: 0 },
   { key: 'gridlockEvents', label: 'Kẹt cứng nút (mọi hướng đứng > 60 s)', unit: 'lần', better: 'low', get: r => r.summary.gridlockEvents ?? 0, d: 0 },
+  { key: 'busSpeedKmh', label: 'Xe buýt: tốc độ TB (cả thời gian dừng đón khách)', unit: 'km/h', better: 'high', get: r => r.summary.busSpeedKmh ?? 0, d: 1 },
+  { key: 'busPaxWaitS', label: 'Xe buýt: khách chờ TB tại điểm dừng', unit: 's', better: 'low', get: r => r.summary.busPaxWaitS ?? 0, d: 0 },
+  { key: 'busBunching', label: 'Xe buýt: dồn chuyến (khoảng cách < 25 % giãn cách)', unit: '%', better: 'low', get: r => (r.summary.busBunching ?? 0) * 100, d: 0 },
   { key: 'pedConflicts', label: 'Xung đột người đi bộ', unit: '', better: 'low', get: r => r.summary.pedConflicts ?? 0, d: 0 },
 ];
 
-export function Compare({ data, onClose, initial }: { data: MapData; onClose: () => void; initial: { seed: number; scenario: ScenarioKind; demandScale: number; edits?: SimConfig['edits']; chaos?: number; crashes?: SimConfig['crashes'] } }) {
+export function Compare({ data, onClose, initial }: { data: MapData; onClose: () => void; initial: { seed: number; scenario: ScenarioKind; demandScale: number; edits?: SimConfig['edits']; chaos?: number; crashes?: SimConfig['crashes']; bus?: SimConfig['bus']; trucks?: SimConfig['trucks'] } }) {
   const [seed, setSeed] = useState(initial.seed); const [scenario, setScenario] = useState<ScenarioKind>(initial.scenario);
   const [minutes, setMinutes] = useState(30); const [kinds, setKinds] = useState<ControllerKind[]>(['fixed', 'actuated', 'ai', 'nosignal', 'major', 'flash', 'optimal']); const [demand, setDemand] = useState(initial.demandScale);
   const [prog, setProg] = useState<{ done: number; total: number; label: string } | null>(null);
@@ -46,7 +49,7 @@ export function Compare({ data, onClose, initial }: { data: MapData; onClose: ()
       if (m.type === 'compareProgress') setProg({ done: m.done, total: m.total, label: m.label });
       if (m.type === 'compareDone') { setRes({ results: m.results, cfg: m.cfg }); setProg(null); c.close(); cl.current = null; }
     });
-    c.send({ type: 'compare', seed, scenario, minutes, demandScale: demand, edits: initial.edits, chaos: initial.chaos, crashes: initial.crashes, kinds: ALL_KINDS.filter(k => kinds.includes(k)) });
+    c.send({ type: 'compare', seed, scenario, minutes, demandScale: demand, edits: initial.edits, chaos: initial.chaos, crashes: initial.crashes, bus: initial.bus, trucks: initial.trucks, kinds: ALL_KINDS.filter(k => kinds.includes(k)) });
   };
   const exportJSON = () => download(`hanoi-flow-lab_compare_${scenario}_seed${seed}.json`, JSON.stringify(res, null, 1), 'application/json');
   const exportCSV = () => {

@@ -1,6 +1,7 @@
 /// <reference lib="webworker" />
 import { Simulation } from '../engine/sim';
 import { VTYPES } from '../engine/scenarios';
+import { BUS_CAP, TRUCK_KINDS } from '../engine/transit';
 import { AiCoordinated, FixedTime } from '../engine/controllers';
 import type { MapData, SimConfig, Metrics } from '../engine/types';
 import { VSTRIDE, PSTRIDE, type FromWorker, type ToWorker, type NodeInfo, type SignalSnap, type CompareResult } from './protocol';
@@ -15,7 +16,24 @@ const pose = { x: 0, y: 0, h: 0 };
 
 function start(c: SimConfig) {
   cfg = c; sim = new Simulation(data, c); lastMetricsT = -1; decIdx = 0; evIdx = 0;
-  post({ type: 'ready', engine: ENGINE, signals: sim.sig.size, links: sim.net.links.length, nodes: sim.net.nodes.length, moves: sim.net.moves.length, zones: sim.zones.map(z => ({ node: z.node, w: Math.round(z.w), name: sim.net.nodes[z.node].name })), zebras: sim.zebras.length, busStops: sim.busStops.length });
+  post({ type: 'ready', engine: ENGINE, signals: sim.sig.size, links: sim.net.links.length, nodes: sim.net.nodes.length, moves: sim.net.moves.length, zones: sim.zones.map(z => ({ node: z.node, w: Math.round(z.w), name: sim.net.nodes[z.node].name })), zebras: sim.zebras.length, busStops: sim.busStops.length, ...busGeo() });
+}
+
+/** bus route polylines (right-hand lane) and line stops (on the pavement, with the kerb point for the boarding animation) */
+function busGeo() {
+  const p = { x: 0, y: 0, h: 0 };
+  const lines = sim.lines.map(l => {
+    const pts: number[] = [];
+    for (const li of l.path) { const L = sim.net.links[li]; for (let s = 0; s <= L.len; s += Math.max(4, L.len / 12)) { sim.net.pointAt(L, s, sim.net.offsetOf(L, L.width * 0.82), p); pts.push(p.x, p.y); } }
+    return { ref: l.ref, name: l.name, colour: l.colour, inferred: l.inferred, pts, stops: l.stops.length };
+  });
+  const stops = sim.stopPts.map(sp => {
+    const L = sim.net.links[sp.link];
+    sim.net.pointAt(L, sp.s - 5, sim.net.offsetOf(L, L.width + 1.6), p); const x = p.x, y = p.y;
+    sim.net.pointAt(L, sp.s - 5, sim.net.offsetOf(L, L.width - 0.2), p);
+    return { x, y, rx: p.x, ry: p.y, name: sp.name, refs: sp.lines.map(i => sim.lines[i].ref).join(', ') };
+  });
+  return { lines, stops };
 }
 
 function snapshot() {
@@ -27,7 +45,10 @@ function snapshot() {
     const vmax = v.mv >= 0 ? sim.net.links[sim.net.moves[v.mv].outL].vmax : sim.net.links[v.link].vmax;
     arr[k++] = pose.x; arr[k++] = pose.y; arr[k++] = pose.h; arr[k++] = v.type; arr[k++] = Math.min(1, v.v / vmax); arr[k++] = v.id;
     const honk = (v.tw || v.type === 5 || v.type === 1) && v.stopT > 1.5 && v.stopT < 6 && ((v.id * 7 + Math.floor(sim.t)) % 5 === 0);
-    arr[k++] = (v.v < 0.5 ? 1 : 0) | (honk ? 2 : 0) | (v.violated && v.mv >= 0 ? 4 : 0) | (v.frozen >= 0 ? 8 : 0);
+    const dw = v.dwellUntil >= 0 && v.kerbMode > 0;
+    arr[k++] = (v.v < 0.5 ? 1 : 0) | (honk ? 2 : 0) | (v.violated && v.mv >= 0 ? 4 : 0) | (v.frozen >= 0 ? 8 : 0) | (dw && v.type === 2 ? 16 : 0) | (dw && v.type === 3 ? 32 : 0)
+      | (!dw && v.kerbMode > 0 && v.mv < 0 && v.kerbS - v.s < 70 ? 64 : 0) | (v.kind > 0 ? v.kind << 8 : 0);
+    arr[k++] = v.len; arr[k++] = v.w;
   }
   const signals: SignalSnap[] = [];
   for (const [id, st] of sim.sig) {
@@ -47,7 +68,9 @@ function snapshot() {
     peds[j++] = z.ax + dx * wu - uy * sp; peds[j++] = z.ay + dy * wu + ux * sp; peds[j++] = w.c; peds[j++] = w.walking ? 1 : 0;
   }
   const crashes = sim.crashes.map(c => ({ id: c.id, x: c.x, y: c.y, h: c.h, crowd: c.crowd, side: c.side, t0: c.t0, t1: c.t1 }));
-  const snap: any = { t: sim.t, n: vs.length, veh: arr, signals, stepsPerSec: sps, engine: ENGINE, peds, np, crashes, umodes };
+  const stopWait = new Float32Array(sim.stopPts.length * 2);
+  sim.stopPts.forEach((sp, i) => { let n = 0; for (const w of sp.wait) n += w.length; stopWait[i * 2] = n; stopWait[i * 2 + 1] = sp.boardingUntil > sim.t ? 1 : 0; });
+  const snap: any = { t: sim.t, n: vs.length, veh: arr, signals, stepsPerSec: sps, engine: ENGINE, peds, np, crashes, umodes, stopWait };
   if (sim.events.length < evIdx) evIdx = 0;
   if (sim.events.length > evIdx) { snap.events = sim.events.slice(evIdx); evIdx = sim.events.length; }
   const tr: Transferable[] = [arr.buffer, peds.buffer];
@@ -104,10 +127,19 @@ function vehInfo(id: number) {
   const v = sim.allVehicles().find(x => x.id === id); if (!v) return null;
   const L = sim.net.links[v.mv >= 0 ? sim.net.moves[v.mv].inL : v.link];
   const route: string[] = []; let c = v.mv >= 0 ? sim.net.moves[v.mv].outL : v.link; const tab = sim.table(v.dest, v.cls); let g = 0;
-  while (c >= 0 && g++ < 40) { const nm = sim.net.links[c].name; if (route[route.length - 1] !== nm) route.push(nm); if (c === v.dest) break; c = tab.next[c]; }
+  if (v.path) { for (let k = v.pi; k < v.path.length; k++) { const nm = sim.net.links[v.path[k]].name; if (nm && route[route.length - 1] !== nm) route.push(nm); } }
+  else while (c >= 0 && g++ < 40) { const nm = sim.net.links[c].name; if (route[route.length - 1] !== nm) route.push(nm); if (c === v.dest) break; c = tab.next[c]; }
+  let bus: any, truck: any;
+  if (v.line >= 0) {
+    const ln = sim.lines[v.line]; const st = ln.stops[v.si];
+    const kinds = ['', 'điểm dừng xe buýt', 'khách vẫy dọc đường', ''];
+    bus = { line: ln.ref, lineName: ln.name, pax: v.pax, cap: BUS_CAP, nextStop: st ? sim.stopPts[st.sid].name || 'Điểm dừng không tên' : 'Hết điểm dừng trong khu vực',
+      dwellLeftS: v.dwellUntil >= 0 ? v.dwellUntil - sim.t : 0, stopKind: kinds[v.kerbMode] ?? '', inLane: v.dwellUntil >= 0 && v.inLane };
+  }
+  if (v.type === 3 && v.kind >= 0) truck = { kind: TRUCK_KINDS[v.kind].name, cargo: v.cargo, unloadLeftS: v.dwellUntil >= 0 && v.kerbMode === 3 ? v.dwellUntil - sim.t : 0, unloads: v.unloads };
   const vmaxL = sim.net.links[v.link];
   return { id: v.id, type: VTYPES[v.type].name, speedKmh: v.v * 3.6, link: L.name, next: v.next >= 0 ? sim.net.links[v.next].name : 'Điểm đến', dest: sim.net.links[v.dest].name,
-    travelS: sim.t - v.tCreate, ffS: v.ff, stops: v.stops, waitS: v.waitTotal, lat: v.lat / vmaxL.width, inJunction: v.mv >= 0, route };
+    travelS: sim.t - v.tCreate, ffS: v.ff, stops: v.stops, waitS: v.waitTotal, lat: v.lat / vmaxL.width, inJunction: v.mv >= 0, route, bus, truck };
 }
 
 self.onmessage = (e: MessageEvent<ToWorker>) => {

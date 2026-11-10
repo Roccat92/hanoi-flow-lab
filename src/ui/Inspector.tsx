@@ -7,7 +7,18 @@ export function Inspector({ node, veh, onClose }: { node: NodeInfo | null; veh: 
     <div className="card inspector">
       <div className="card-h">🛵 Phương tiện #{veh.id} <button onClick={onClose}>×</button></div>
       <table><tbody>
-        <tr><td>Loại</td><td>{veh.type}</td></tr>
+        <tr><td>Loại</td><td>{veh.truck ? veh.truck.kind : veh.type}</td></tr>
+        {veh.bus && <>
+          <tr><td>Tuyến</td><td><b>{veh.bus.line}</b> {veh.bus.lineName}</td></tr>
+          <tr><td>Khách trên xe</td><td>{veh.bus.pax} / {veh.bus.cap}</td></tr>
+          <tr><td>Điểm dừng tới</td><td>{veh.bus.nextStop}</td></tr>
+          {veh.bus.dwellLeftS > 0 && <tr><td>Đang đón/trả khách</td><td>còn {veh.bus.dwellLeftS.toFixed(0)} s ({veh.bus.stopKind}{veh.bus.inLane ? ', dừng giữa làn vì lề bị chiếm' : ', tạt sát lề'})</td></tr>}
+        </>}
+        {veh.truck && <>
+          <tr><td>Hàng hoá</td><td>{veh.truck.cargo}</td></tr>
+          {veh.truck.unloadLeftS > 0 && <tr><td>Đang đỗ bốc dỡ</td><td>còn {(veh.truck.unloadLeftS / 60).toFixed(1)} phút (chiếm làn)</td></tr>}
+          {veh.truck.unloads > 0 && <tr><td>Đã bốc dỡ</td><td>{veh.truck.unloads} lần</td></tr>}
+        </>}
         <tr><td>Tốc độ</td><td>{veh.speedKmh.toFixed(1)} km/h</td></tr>
         <tr><td>Đang ở</td><td>{veh.inJunction ? 'trong nút giao, từ ' : ''}{veh.link}</td></tr>
         <tr><td>Tiếp theo</td><td>{veh.next}</td></tr>
