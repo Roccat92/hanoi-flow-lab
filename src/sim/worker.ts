@@ -3,19 +3,19 @@ import { Simulation } from '../engine/sim';
 import { VTYPES } from '../engine/scenarios';
 import { AiCoordinated, FixedTime } from '../engine/controllers';
 import type { MapData, SimConfig, Metrics } from '../engine/types';
-import { VSTRIDE, type FromWorker, type ToWorker, type NodeInfo, type SignalSnap, type CompareResult } from './protocol';
+import { VSTRIDE, PSTRIDE, type FromWorker, type ToWorker, type NodeInfo, type SignalSnap, type CompareResult } from './protocol';
 import { runComparison } from './compare';
 
 let data: MapData; let sim: Simulation; let cfg: SimConfig;
 let playing = true; let speed = 1; let light = false;
-let lastMetricsT = -1; let decIdx = 0; let stepsDone = 0; let stepsT0 = performance.now(); let sps = 0;
+let lastMetricsT = -1; let decIdx = 0; let evIdx = 0; let stepsDone = 0; let stepsT0 = performance.now(); let sps = 0;
 const ENGINE = 'TS Web Worker (IDM + sublane, độ trung thực thấp hơn SUMO)';
 const post = (m: FromWorker, tr?: Transferable[]) => (self as any).postMessage(m, tr ?? []);
 const pose = { x: 0, y: 0, h: 0 };
 
 function start(c: SimConfig) {
-  cfg = c; sim = new Simulation(data, c); lastMetricsT = -1; decIdx = 0;
-  post({ type: 'ready', engine: ENGINE, signals: sim.sig.size, links: sim.net.links.length, nodes: sim.net.nodes.length, moves: sim.net.moves.length });
+  cfg = c; sim = new Simulation(data, c); lastMetricsT = -1; decIdx = 0; evIdx = 0;
+  post({ type: 'ready', engine: ENGINE, signals: sim.sig.size, links: sim.net.links.length, nodes: sim.net.nodes.length, moves: sim.net.moves.length, zones: sim.zones.map(z => ({ node: z.node, w: Math.round(z.w), name: sim.net.nodes[z.node].name })), zebras: sim.zebras.length, busStops: sim.busStops.length });
 }
 
 function snapshot() {
@@ -25,15 +25,30 @@ function snapshot() {
   for (const v of vs) {
     sim.pose(v, pose);
     const vmax = v.mv >= 0 ? sim.net.links[sim.net.moves[v.mv].outL].vmax : sim.net.links[v.link].vmax;
-    arr[k++] = pose.x; arr[k++] = pose.y; arr[k++] = pose.h; arr[k++] = v.type; arr[k++] = Math.min(1, v.v / vmax); arr[k++] = v.id; arr[k++] = v.v < 0.5 ? 1 : 0;
+    arr[k++] = pose.x; arr[k++] = pose.y; arr[k++] = pose.h; arr[k++] = v.type; arr[k++] = Math.min(1, v.v / vmax); arr[k++] = v.id;
+    const honk = (v.tw || v.type === 5 || v.type === 1) && v.stopT > 1.5 && v.stopT < 6 && ((v.id * 7 + Math.floor(sim.t)) % 5 === 0);
+    arr[k++] = (v.v < 0.5 ? 1 : 0) | (honk ? 2 : 0) | (v.violated && v.mv >= 0 ? 4 : 0) | (v.frozen >= 0 ? 8 : 0);
   }
   const signals: SignalSnap[] = [];
   for (const [id, st] of sim.sig) {
     const n = sim.net.nodes[id];
     signals.push({ id, phase: st.phase, stage: st.stage, t: st.tStage, colors: n.moves.map(m => sim.sigColor(m)).join('') });
   }
-  const snap: any = { t: sim.t, n: vs.length, veh: arr, signals, stepsPerSec: sps, engine: ENGINE };
-  const tr: Transferable[] = [arr.buffer];
+  let np = 0; for (const z of sim.zebras) np += z.walkers.length;
+  const peds = new Float32Array(np * PSTRIDE); let j = 0;
+  for (const z of sim.zebras) for (let i = 0; i < z.walkers.length; i++) {
+    const w = z.walkers[i]; const u = w.dir > 0 ? w.u : 1 - w.u;
+    // waiting pedestrians stand on the kerb, slightly spread along it
+    const sp = w.walking ? 0 : (i % 4) * 0.6 - 0.9;
+    const dx = z.bx - z.ax, dy = z.by - z.ay, d = Math.hypot(dx, dy) || 1;
+    const ux = dx / d, uy = dy / d; const wu = w.walking ? u : (w.dir > 0 ? -0.02 : 1.02);
+    peds[j++] = z.ax + dx * wu - uy * sp; peds[j++] = z.ay + dy * wu + ux * sp; peds[j++] = w.c; peds[j++] = w.walking ? 1 : 0;
+  }
+  const crashes = sim.crashes.map(c => ({ id: c.id, x: c.x, y: c.y, h: c.h, crowd: c.crowd, side: c.side, t0: c.t0, t1: c.t1 }));
+  const snap: any = { t: sim.t, n: vs.length, veh: arr, signals, stepsPerSec: sps, engine: ENGINE, peds, np, crashes };
+  if (sim.events.length < evIdx) evIdx = 0;
+  if (sim.events.length > evIdx) { snap.events = sim.events.slice(evIdx); evIdx = sim.events.length; }
+  const tr: Transferable[] = [arr.buffer, peds.buffer];
   if (Math.floor(sim.t) !== lastMetricsT) {
     lastMetricsT = Math.floor(sim.t);
     snap.metrics = sim.metrics();
@@ -102,6 +117,11 @@ self.onmessage = (e: MessageEvent<ToWorker>) => {
   else if (m.type === 'light') light = m.on;
   else if (m.type === 'inspectNode') post({ type: 'node', info: nodeInfo(m.id) });
   else if (m.type === 'inspectVeh') post({ type: 'veh', info: vehInfo(m.id) });
+  else if (m.type === 'inspectLink') {
+    const L = sim.net.links[m.id]; const list = sim.linkV[m.id]; let sv = 0; for (const v of list) sv += v.v;
+    post({ type: 'link', info: { id: L.id, name: L.name, cls: L.cls, lanes: L.lanes, speedKmh: Math.round(L.vmax * 3.6), lenM: L.len, twoWay: L.twoWay, closed: L.closed, inf: L.inf, vehicles: list.length, meanKmh: list.length ? sv / list.length * 3.6 : L.vmax * 3.6, occ: sim.occupancy(L.id),
+      outMoves: sim.net.nodes[L.to].outLinks.filter(o => sim.net.links[o].to !== L.from || true).map(o => { const mv = L.outMoves.find(mi => sim.net.moves[mi].outL === o); return { id: mv ?? -1, to: sim.net.links[o].name, turn: mv !== undefined ? sim.net.moves[mv].turn : '-', outL: o }; }), twin: L.twin } });
+  }
   else if (m.type === 'series') post({ type: 'series', series: sim.series.slice() as Metrics[] });
   else if (m.type === 'compare') {
     const results: CompareResult[] = runComparison(data, m, (done, total, label) => post({ type: 'compareProgress', done, total, label }));

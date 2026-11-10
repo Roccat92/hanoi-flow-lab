@@ -47,3 +47,12 @@ footer { padding: 3px 10px; background: #111218; color: #8d8a7c; font-size: 11px
 .cmp td.best { background: #1d4a2a; color: #9fffb0; font-weight: bold; } .pct { color: #8d8a7c; font-size: 10px; }
 .charts4 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
 @media (max-width: 1100px) { main { grid-template-columns: 1fr; grid-template-rows: 60vh auto auto; } aside.left { order: 2; } aside.right { order: 3; } .maps { order: 1; } }
+.editor .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 4px 0; }
+.editor .sect { border-top: 1px dashed #34364a; margin-top: 6px; padding-top: 5px; }
+.editor summary { cursor: pointer; color: #b9b5a2; }
+.zones { max-height: 180px; overflow-y: auto; }
+.zone { display: grid; grid-template-columns: 1fr 110px 38px; gap: 4px; align-items: center; font-size: 11px; }
+.zone input[type=range] { accent-color: #b45cc8; }
+.inf { background: #5a3d7a; color: #f0d8ff; padding: 0 4px; font-size: 10px; }
+.warnbox { background: #4a3a10; border: 1px solid #ffd23f; padding: 3px 6px; margin: 4px 0; }
+.events .ev { padding: 2px 0; border-bottom: 1px dashed #2a2b38; font-size: 11px; cursor: pointer; } .ev.crash { color: #ff9f6b; } .ev.crashEnd { color: #9fe0a0; }

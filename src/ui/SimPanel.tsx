@@ -1,13 +1,13 @@
 import React, { useEffect, useImperativeHandle, useRef, forwardRef } from 'react';
 import type { MapData, SimConfig } from '../engine/types';
-import { MapView, type Layers } from '../render/MapView';
+import { MapView, type Layers, type PickKind } from '../render/MapView';
 import { sumoClient, workerClient, type SimClient } from '../sim/client';
 import type { FromWorker, Snapshot } from '../sim/protocol';
 
 export interface SimPanelHandle { send: SimClient['send']; focus(x: number, y: number): void; fit(): void; fps(): number }
 interface Props {
   data: MapData; cfg: SimConfig; cfgKey: string; layers: Layers; playing: boolean; speed: number; backend?: string | null; label?: string;
-  onSnap?: (s: Snapshot) => void; onMsg?: (m: FromWorker) => void; onPick?: (k: 'veh' | 'node', id: number) => void;
+  onSnap?: (s: Snapshot) => void; onMsg?: (m: FromWorker) => void; onPick?: (k: PickKind, id: number) => void; pickMode?: 'auto' | 'node' | 'link';
 }
 
 export const SimPanel = forwardRef<SimPanelHandle, Props>(function SimPanel(p, ref) {
@@ -17,7 +17,7 @@ export const SimPanel = forwardRef<SimPanelHandle, Props>(function SimPanel(p, r
     send: m => client.current?.send(m), focus: (x, y) => view.current?.focus(x, y), fit: () => view.current?.fit(), fps: () => view.current?.fps ?? 0,
   }));
   useEffect(() => {
-    const v = new MapView(p.data, p.layers); view.current = v; let alive = true;
+    const v = new MapView(p.data, p.layers, p.cfg.edits ?? {}); view.current = v; v.pickMode = p.pickMode ?? 'auto'; let alive = true;
     v.onPick = (k, id) => cb.current.onPick?.(k, id);
     v.mount(el.current!).then(() => {
       if (!alive) { v.destroy(); return; }
@@ -28,6 +28,9 @@ export const SimPanel = forwardRef<SimPanelHandle, Props>(function SimPanel(p, r
     return () => { alive = false; client.current?.close(); client.current = null; if (v.ready) v.destroy(); view.current = null; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [p.data, p.backend]);
+  const ek = JSON.stringify(p.cfg.edits ?? {});
+  useEffect(() => { if (view.current && view.current.ready) { view.current.setEdits(p.cfg.edits ?? {}); view.current.drawEditor(); } }, [ek]);
+  useEffect(() => { if (view.current) view.current.pickMode = p.pickMode ?? 'auto'; }, [p.pickMode]);
   useEffect(() => { if (client.current) { client.current.send({ type: 'reset', cfg: p.cfg }); if (view.current) view.current.decisions = []; } }, [p.cfgKey]);
   useEffect(() => { client.current?.send({ type: 'play', on: p.playing }); }, [p.playing]);
   useEffect(() => { client.current?.send({ type: 'speed', x: p.speed }); }, [p.speed]);

@@ -1,12 +1,16 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import type { ControllerKind, MapData, Metrics, ScenarioKind, SimConfig, DecisionLog } from './engine/types';
+import { DEFAULT_CRASH, type ControllerKind, type MapData, type Metrics, type ScenarioKind, type SimConfig, type DecisionLog, type Edits, type SimEvent } from './engine/types';
 import { SCENARIOS } from './engine/scenarios';
 import { SimPanel, type SimPanelHandle } from './ui/SimPanel';
 import { Inspector, fmtT } from './ui/Inspector';
 import { Chart, fmtN } from './ui/Chart';
 import { Compare } from './ui/Compare';
+import { Editor } from './ui/Editor';
 import type { Layers } from './render/MapView';
-import type { FromWorker, NodeInfo, Snapshot, VehInfo } from './sim/protocol';
+import type { FromWorker, LinkInfo, NodeInfo, Snapshot, VehInfo } from './sim/protocol';
+import { Network } from './engine/network';
+
+function initialEdits(): Edits { try { const q = Q.get('edits'); if (q) return JSON.parse(decodeURIComponent(q)); return JSON.parse(localStorage.getItem('hanoi-flow-lab:current') ?? '{}'); } catch { return {}; } }
 
 const Q = new URLSearchParams(location.search);
 const CTRL: Record<ControllerKind, string> = { fixed: 'Cố định thời gian', actuated: 'Cảm biến (actuated)', ai: 'AI điều phối' };
@@ -15,7 +19,7 @@ const SPEEDS = [1, 2, 4, 8, 16, 64];
 export default function App() {
   const [data, setData] = useState<MapData | null>(null);
   const [err, setErr] = useState('');
-  const [cfg, setCfg] = useState<SimConfig>({ seed: +(Q.get('seed') ?? 42), controller: (Q.get('controller') as ControllerKind) ?? 'ai', scenario: (Q.get('scenario') as ScenarioKind) ?? 'morning', demandScale: +(Q.get('demand') ?? 1), dt: 0.5, ...(Q.get('cap') ? { maxVehicles: +Q.get('cap')! } : {}) });
+  const [cfg, setCfg] = useState<SimConfig>({ seed: +(Q.get('seed') ?? 42), controller: (Q.get('controller') as ControllerKind) ?? 'ai', scenario: (Q.get('scenario') as ScenarioKind) ?? 'morning', demandScale: +(Q.get('demand') ?? 1), dt: 0.5, ...(Q.get('cap') ? { maxVehicles: +Q.get('cap')! } : {}), edits: initialEdits(), chaos: +(Q.get('chaos') ?? 0.6), crashes: { ...DEFAULT_CRASH, on: Q.get('crash') !== '0', ...(Q.get('crashRate') ? { perHour: +Q.get('crashRate')! } : {}) } });
   const [layers, setLayers] = useState<Layers>({ heat: Q.get('layer') === 'heat', density: Q.get('layer') === 'density', signals: true, ai: true, night: Q.get('night') === '1', light: Q.get('quality') === 'low' });
   const [playing, setPlaying] = useState(true); const [speed, setSpeed] = useState(+(Q.get('speed') ?? 4));
   const [split, setSplit] = useState(Q.get('view') === 'split'); const [splitB, setSplitB] = useState<ControllerKind>('fixed');
@@ -25,7 +29,11 @@ export default function App() {
   const [info, setInfo] = useState<{ engine: string; sps: number; n: number; fps: number }>({ engine: '', sps: 0, n: 0, fps: 0 });
   const [decs, setDecs] = useState<DecisionLog[]>([]);
   const [node, setNode] = useState<NodeInfo | null>(null); const [veh, setVeh] = useState<VehInfo | null>(null);
-  const sel = useRef<{ k: 'veh' | 'node'; id: number } | null>(null);
+  const sel = useRef<{ k: 'veh' | 'node' | 'link'; id: number } | null>(null);
+  const [showEd, setShowEd] = useState(Q.get('editor') === '1'); const [pickMode, setPickMode] = useState<'node' | 'link'>('node');
+  const [link, setLink] = useState<LinkInfo | null>(null); const [moveFrom, setMoveFrom] = useState<number | null>(null);
+  const [zones, setZones] = useState<{ node: number; w: number; name: string }[]>([]); const [events, setEvents] = useState<SimEvent[]>([]);
+  const baseNet = useMemo(() => data ? new Network(data) : null, [data]);
   const A = useRef<SimPanelHandle>(null); const B = useRef<SimPanelHandle>(null);
   const backend = Q.get('backend');
   const cfgKey = JSON.stringify(cfg);
@@ -34,12 +42,13 @@ export default function App() {
   useEffect(() => {
     fetch(import.meta.env.BASE_URL + 'data/dongda.json').then(r => r.json()).then(setData).catch(e => setErr(String(e)));
   }, []);
-  useEffect(() => { setHist([]); setHistB([]); setDecs([]); }, [cfgKey, splitB, split]);
+  useEffect(() => { setHist([]); setHistB([]); setDecs([]); setEvents([]); }, [cfgKey, splitB, split]);
+  useEffect(() => { localStorage.setItem('hanoi-flow-lab:current', JSON.stringify(cfg.edits ?? {})); }, [JSON.stringify(cfg.edits)]);
   // poll inspector
   useEffect(() => {
     const t = setInterval(() => {
       const s = sel.current; if (!s) return;
-      A.current?.send(s.k === 'veh' ? { type: 'inspectVeh', id: s.id } : { type: 'inspectNode', id: s.id });
+      A.current?.send(s.k === 'veh' ? { type: 'inspectVeh', id: s.id } : s.k === 'link' ? { type: 'inspectLink', id: s.id } : { type: 'inspectNode', id: s.id });
     }, 500);
     return () => clearInterval(t);
   }, []);
@@ -51,10 +60,11 @@ export default function App() {
       setInfo({ engine: s.engine, sps: s.stepsPerSec, n: s.n, fps: A.current?.fps() ?? 0 });
       if (s.decisions?.length) setDecs(d => [...s.decisions!.slice().reverse(), ...d].slice(0, 80));
     }
+    if (s.events?.length) setEvents(e => [...s.events!.slice().reverse(), ...e].slice(0, 60));
   };
   const onSnapB = (s: Snapshot) => { if (s.metrics) { const m = s.metrics; setSnapB(m); setHistB(h => (h.length && h[h.length - 1].t > m.t) ? [m] : (h.length && m.t - h[h.length - 1].t < 5 ? h : [...h.slice(-720), m])); } };
-  const onMsgA = (m: FromWorker) => { if (m.type === 'node') { setNode(m.info); setVeh(null); } if (m.type === 'veh') { if (m.info) { setVeh(m.info); setNode(null); } else { setVeh(null); sel.current = null; } } };
-  const onPick = (k: 'veh' | 'node', id: number) => { sel.current = { k, id }; A.current?.send(k === 'veh' ? { type: 'inspectVeh', id } : { type: 'inspectNode', id }); };
+  const onMsgA = (m: FromWorker) => { if (m.type === 'ready' && m.zones) setZones(m.zones); if (m.type === 'link') { setLink(m.info); setVeh(null); } if (m.type === 'node') { setNode(m.info); setVeh(null); } if (m.type === 'veh') { if (m.info) { setVeh(m.info); setNode(null); } else { setVeh(null); sel.current = null; } } };
+  const onPick = (k: 'veh' | 'node' | 'link', id: number) => { sel.current = { k, id }; A.current?.send(k === 'veh' ? { type: 'inspectVeh', id } : k === 'link' ? { type: 'inspectLink', id } : { type: 'inspectNode', id }); };
 
   if (err) return <div className="loading">Không tải được dữ liệu bản đồ: {err}</div>;
   if (!data) return <div className="loading">Đang tải mạng lưới đường Đống Đa từ OpenStreetMap…</div>;
@@ -75,11 +85,13 @@ export default function App() {
         <div className="speeds">{SPEEDS.map(x => <button key={x} className={speed === x ? 'on' : ''} onClick={() => setSpeed(x)}>{x === 64 ? 'Max' : x + '×'}</button>)}</div>
         <button onClick={() => setCfg({ ...cfg })}>↺ Chạy lại</button>
         <button className={split ? 'on' : ''} onClick={() => setSplit(!split)}>⇆ Chia đôi</button>
+        <button className={showEd ? 'on' : ''} onClick={() => setShowEd(!showEd)}>🛠 Chỉnh sửa</button>
+        <label title="0 = trật tự, 100% = hỗn loạn kiểu Hà Nội giờ cao điểm">Hỗn loạn <input type="range" min={0} max={1} step={0.05} value={cfg.chaos ?? 0.6} onChange={e => setCfg({ ...cfg, chaos: +e.target.value })} />{Math.round((cfg.chaos ?? 0.6) * 100)}%</label>
         <button className="primary" onClick={() => setShowCmp(true)}>⚗ So sánh</button>
       </header>
       <div className="layers">
         {([['heat', 'Nhiệt tốc độ'], ['density', 'Mật độ'], ['signals', 'Đèn tín hiệu'], ['ai', 'Quyết định AI'], ['night', 'Ban đêm'], ['light', 'Chế độ nhẹ']] as [keyof Layers, string][]).map(([k, l]) =>
-          <label key={k} className="chk"><input type="checkbox" checked={layers[k]} onChange={e => { const n = { ...layers, [k]: e.target.checked }; if (k === 'heat' && e.target.checked) n.density = false; if (k === 'density' && e.target.checked) n.heat = false; setLayers(n); }} />{l}</label>)}
+          <label key={k} className="chk"><input type="checkbox" checked={!!layers[k]} onChange={e => { const n = { ...layers, [k]: e.target.checked }; if (k === 'heat' && e.target.checked) n.density = false; if (k === 'density' && e.target.checked) n.heat = false; setLayers(n); }} />{l}</label>)}
         <span className="engine" title="Engine đang chạy">⚙ {backend ? 'SUMO (backend): ' + backend : info.engine}</span>
         <span className="perf">{info.n} xe · {info.sps.toFixed(0)} bước/s · {info.fps.toFixed(0)} FPS</span>
       </div>
@@ -111,16 +123,25 @@ export default function App() {
           </div>
         </aside>
         <section className="maps">
-          <SimPanel ref={A} data={data} cfg={cfg} cfgKey={cfgKey} layers={layers} playing={playing} speed={speed} backend={backend} label={split ? CTRL[cfg.controller] : undefined} onSnap={onSnapA} onMsg={onMsgA} onPick={onPick} />
+          <SimPanel ref={A} data={data} cfg={cfg} cfgKey={cfgKey} layers={{ ...layers, editor: showEd, zones: showEd ? zones : undefined }} pickMode={showEd ? pickMode : 'auto'} playing={playing} speed={speed} backend={backend} label={split ? CTRL[cfg.controller] : undefined} onSnap={onSnapA} onMsg={onMsgA} onPick={onPick} />
           {split && <SimPanel ref={B} data={data} cfg={cfgB} cfgKey={JSON.stringify(cfgB)} layers={layers} playing={playing} speed={speed} label={CTRL[splitB]} onSnap={onSnapB} />}
           <div className="legend-map">
             {layers.heat && <span><i style={{ background: '#2ecc71' }} />nhanh <i style={{ background: '#f1c40f' }} />chậm <i style={{ background: '#e74c3c' }} />tắc</span>}
             {layers.density && <span><i style={{ background: '#3498db' }} />thưa <i style={{ background: '#e67e22' }} />đông <i style={{ background: '#8e2de2' }} />kẹt cứng</span>}
-            <span><b>🛵</b> xe máy · ô tô · buýt xanh/vàng · tải</span>
+            <span><b>🛵</b> xe máy · xe đạp · ô tô/taxi/SUV/van · buýt · tải · người đi bộ · ngõ (xám nhạt){(cfg.edits && Object.keys(cfg.edits).length > 0) ? ' · ĐÃ CHỈNH SỬA: ' + (cfg.edits.name ?? 'kịch bản riêng') : ''}</span>
           </div>
         </section>
         <aside className="right">
-          <Inspector node={node} veh={veh} onClose={() => { sel.current = null; setNode(null); setVeh(null); }} />
+          {showEd && <Editor edits={cfg.edits ?? {}} onApply={e => { setCfg({ ...cfg, edits: e }); }} node={pickMode === 'node' ? node : null} link={pickMode === 'link' ? link : null}
+            nodeOsmSignal={node && baseNet ? baseNet.nodes[node.id]?.osmSignal : undefined} zones={zones} pickMode={pickMode} setPickMode={m => { setPickMode(m); sel.current = null; setNode(null); setLink(null); }}
+            chaos={cfg.chaos ?? 0.6} setChaos={x => setCfg({ ...cfg, chaos: x })} crashes={cfg.crashes ?? DEFAULT_CRASH} setCrashes={c => setCfg({ ...cfg, crashes: c })}
+            onClose={() => setShowEd(false)} moveFrom={moveFrom} setMoveFrom={setMoveFrom} />}
+          {!showEd && <Inspector node={node} veh={veh} onClose={() => { sel.current = null; setNode(null); setVeh(null); }} />}
+          <div className="card events">
+            <div className="card-h">🚨 Sự cố & sự kiện</div>
+            {events.length === 0 && <div className="muted small">Chưa có sự cố. {cfg.crashes?.on ? `Va quẹt ngẫu nhiên: bật (${cfg.crashes.perHour}/giờ, có seed, giống nhau giữa các bộ điều khiển).` : 'Va quẹt ngẫu nhiên: tắt.'}</div>}
+            {events.slice(0, 20).map((e, i) => <div key={i} className={'ev ' + e.kind} onClick={() => e.x !== undefined && A.current?.focus(e.x, e.y!)}><span className="t">{fmtT(e.t)}</span> {e.text}</div>)}
+          </div>
           <div className="card log">
             <div className="card-h">🧠 Nhật ký quyết định tín hiệu</div>
             {decs.length === 0 && <div className="muted small">Chưa có quyết định đổi pha.</div>}
@@ -129,7 +150,7 @@ export default function App() {
         </aside>
       </main>
       <footer>Bản đồ: {data.meta.attribution} · Khu vực: {data.meta.area} · {data.meta.counts.nodes} nút, {data.meta.counts.links} đoạn đường, {data.meta.counts.signals} nút đèn · Mô phỏng phục vụ nghiên cứu, không phải số liệu đo thực tế.</footer>
-      {showCmp && <Compare data={data} onClose={() => setShowCmp(false)} initial={{ seed: cfg.seed, scenario: cfg.scenario, demandScale: cfg.demandScale }} />}
+      {showCmp && <Compare data={data} onClose={() => setShowCmp(false)} initial={{ seed: cfg.seed, scenario: cfg.scenario, demandScale: cfg.demandScale, edits: cfg.edits, chaos: cfg.chaos, crashes: cfg.crashes }} />}
     </div>
   );
 }

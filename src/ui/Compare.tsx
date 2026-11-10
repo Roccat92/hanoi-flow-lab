@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import type { MapData, ScenarioKind } from '../engine/types';
+import type { SimConfig, MapData, ScenarioKind } from '../engine/types';
 import { SCENARIOS } from '../engine/scenarios';
 import { workerClient, type SimClient } from '../sim/client';
 import type { CompareResult } from '../sim/protocol';
@@ -24,7 +24,7 @@ const ROWS: Row[] = [
   { key: 'violations', label: 'Vi phạm an toàn tín hiệu', unit: '', better: 'low', get: r => r.violations, d: 0 },
 ];
 
-export function Compare({ data, onClose, initial }: { data: MapData; onClose: () => void; initial: { seed: number; scenario: ScenarioKind; demandScale: number } }) {
+export function Compare({ data, onClose, initial }: { data: MapData; onClose: () => void; initial: { seed: number; scenario: ScenarioKind; demandScale: number; edits?: SimConfig['edits']; chaos?: number; crashes?: SimConfig['crashes'] } }) {
   const [seed, setSeed] = useState(initial.seed); const [scenario, setScenario] = useState<ScenarioKind>(initial.scenario);
   const [minutes, setMinutes] = useState(30); const [demand, setDemand] = useState(initial.demandScale);
   const [prog, setProg] = useState<{ done: number; total: number; label: string } | null>(null);
@@ -39,7 +39,7 @@ export function Compare({ data, onClose, initial }: { data: MapData; onClose: ()
       if (m.type === 'compareProgress') setProg({ done: m.done, total: m.total, label: m.label });
       if (m.type === 'compareDone') { setRes({ results: m.results, cfg: m.cfg }); setProg(null); c.close(); cl.current = null; }
     });
-    c.send({ type: 'compare', seed, scenario, minutes, demandScale: demand });
+    c.send({ type: 'compare', seed, scenario, minutes, demandScale: demand, edits: initial.edits, chaos: initial.chaos, crashes: initial.crashes });
   };
   const exportJSON = () => download(`hanoi-flow-lab_compare_${scenario}_seed${seed}.json`, JSON.stringify(res, null, 1), 'application/json');
   const exportCSV = () => {
